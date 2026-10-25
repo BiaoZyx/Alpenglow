@@ -1,0 +1,10 @@
+Alpenglow
+Copyright 2026 BiaoZyx
+
+This product includes software developed at
+Milk-V (https://milk-v.com/) — Linux kernel 5.10, U-Boot 2021.10,
+device trees, and AIC8800 firmware from duo-buildroot-sdk-v2.
+
+Alpine Linux (https://alpinelinux.org/) — user space packages.
+
+This distribution does not alter the license status of any upstream component.

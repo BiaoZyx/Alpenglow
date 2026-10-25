@@ -1,0 +1,7 @@
+NAME="Alpenglow"
+PRETTY_NAME="Alpenglow 1.0.0 (Alpine on Milk-V Duo S)"
+ID=alpenglow
+ID_LIKE=alpine
+VERSION_ID=1.0.0
+HOME_URL="https://github.com/BiaoZyx/Alpenglow"
+BUG_REPORT_URL="https://github.com/BiaoZyx/Alpenglow/issues"

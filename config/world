@@ -1,0 +1,8 @@
+alpine-base
+dropbear
+dhcpcd
+e2fsprogs-extra
+iwd
+libgpiod
+parted
+util-linux
