@@ -42,8 +42,10 @@ info() {
     [ -n "$storage" ] || storage="n/a"
     temp=$(awk '{printf "%.1f°C", $1/1000}' "$TEMP" 2>/dev/null || echo "n/a")
     eth=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' || echo "down")
+    [ -n "$eth" ] || eth="down"
     wifi=$(cat /sys/class/net/wlan0/operstate 2>/dev/null || echo "absent")
-    usb=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' || echo "down")
+    usb=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}')
+    [ -n "$usb" ] || usb="down"
 
     printf "${P}Alpenglow %s${R} on %s\n" "$VERSION" "$host"
     printf "  ${D}%-8s${R} %s\n" "kernel"  "$kern"
@@ -101,6 +103,7 @@ usb() {
         udc="not configured"
     fi
     usb0=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' || echo "down")
+    [ -n "$usb0" ] || usb0="down"
     ssh_addr=$(echo "$usb0" | cut -d/ -f1)
 
     printf "${P}USB gadget${R}\n"
