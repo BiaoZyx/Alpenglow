@@ -1,6 +1,7 @@
 alpine-base
-dropbear
 dhcpcd
+dnsmasq
+dropbear
 e2fsprogs-extra
 iwd
 libgpiod

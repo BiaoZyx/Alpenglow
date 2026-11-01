@@ -1,5 +1,4 @@
 out/
-tools/apk.static
 *.img
 *.img.xz
 *.sha256

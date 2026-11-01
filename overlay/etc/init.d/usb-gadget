@@ -1,0 +1,48 @@
+#!/sbin/openrc-run
+description="Alpenglow USB RNDIS gadget"
+
+depend() {
+    need localmount
+    after modules
+    before dhcpcd
+}
+
+set_gpio() {
+    local num="$1" val="$2" path="/sys/class/gpio/gpio$1"
+    [ -d "$path" ] || echo "$num" > /sys/class/gpio/export
+    echo out > "$path/direction"
+    sleep 0.1
+    echo "$val" > "$path/value"
+}
+
+start() {
+    ebegin "Starting USB RNDIS gadget"
+
+    set_gpio 453 0
+    sleep 0.5
+    set_gpio 510 0
+    sleep 0.5
+
+    if [ -x /mnt/system/uhubon.sh ]; then
+        /mnt/system/uhubon.sh device >> /var/log/usb-gadget.log 2>&1
+    fi
+
+    if [ -x /mnt/system/run_usb.sh ]; then
+        /mnt/system/run_usb.sh probe rndis >> /var/log/usb-gadget.log 2>&1
+        /mnt/system/run_usb.sh start  >> /var/log/usb-gadget.log 2>&1
+    fi
+
+    sleep 0.5
+    ifconfig usb0 192.168.42.1 netmask 255.255.255.0 up
+
+    rc-service dnsmasq start
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping USB RNDIS gadget"
+    rc-service dnsmasq stop 2>/dev/null
+    ifconfig usb0 down 2>/dev/null
+    [ -x /mnt/system/run_usb.sh ] && /mnt/system/run_usb.sh stop >> /var/log/usb-gadget.log 2>&1
+    eend $?
+}

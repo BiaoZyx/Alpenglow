@@ -41,15 +41,32 @@ echo "arch    : $ARCH"
 echo "rootfs  : $ROOTFS"
 echo "world   : $(tr '\n' ' ' < config/world)"
 
+# --- doas/sudo discovering ---
+if [ "$(id -u)" -eq 0 ]; then
+    PRIV=""
+elif command -v doas >/dev/null 2>&1; then
+    PRIV="doas"
+elif command -v sudo >/dev/null 2>&1; then
+    PRIV="sudo"
+else
+    echo "error: need root, sudo, or doas" >&2
+    exit 1
+fi
+
+# --- check before ---
+if [ -d "$ROOTFS" ]; then
+    $PRIV rm -rf "$ROOTFS" || { echo "error: cannot clean $ROOTFS" >&2; exit 1; }
+fi
+
+
 # --- prepare rootfs ---
-mkdir -p "$ROOTFS/etc/apk"
-cp config/repositories "$ROOTFS/etc/apk/repositories"
+$PRIV mkdir -p "$ROOTFS/etc/apk"
+$PRIV cp config/repositories "$ROOTFS/etc/apk/repositories"
 
 # --- install packages ---
-"$APK_STATIC" \
+$PRIV "$APK_STATIC" \
     --root "$ROOTFS" \
     --arch "$ARCH" \
-    --keys-dir "$ROOTFS/etc/apk/keys" \
     --initdb \
     --no-cache \
     --allow-untrusted \
@@ -58,22 +75,25 @@ cp config/repositories "$ROOTFS/etc/apk/repositories"
 # --- overlay ---
 echo "== overlay =="
 if [ -d overlay ]; then
-    cp -a overlay/. "$ROOTFS/"
+    $PRIV cp -a overlay/. "$ROOTFS/"
+    for d in etc usr/lib/os-release mnt; do
+        [ -e "$ROOTFS/$d" ] && $PRIV chown -R root:root "$ROOTFS/$d"
+    done
 fi
 
 # --- license/notice ---
-mkdir -p "$ROOTFS/usr/share/doc/alpenglow"
-cp LICENSE NOTICE "$ROOTFS/usr/share/doc/alpenglow/"
+$PRIV mkdir -p "$ROOTFS/usr/share/doc/alpenglow"
+$PRIV cp LICENSE NOTICE "$ROOTFS/usr/share/doc/alpenglow/"
 
 # --- firmware placeholder ---
-mkdir -p "$ROOTFS$FIRMWARE_DIR"
+$PRIV mkdir -p "$ROOTFS$FIRMWARE_DIR"
 if [ -d firmware ] && [ -n "$(ls -A firmware 2>/dev/null)" ]; then
-    cp firmware/* "$ROOTFS$FIRMWARE_DIR/" 2>/dev/null || true
+    $PRIV cp firmware/* "$ROOTFS$FIRMWARE_DIR/" 2>/dev/null || true
 fi
 
 # --- cleanup apk cache unless --keep-cache ---
 if [ "$KEEP_CACHE" = "0" ]; then
-    rm -rf "$ROOTFS/var/cache/apk/"* 2>/dev/null || true
+    $PRIV rm -rf "$ROOTFS/var/cache/apk/"* 2>/dev/null || true
 fi
 
 echo "== done =="
