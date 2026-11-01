@@ -38,7 +38,8 @@ info() {
     kern=$(uname -r 2>/dev/null || echo "n/a")
     up=$(awk '{printf "%dh%02dm", $1/3600, ($1%3600)/60}' /proc/uptime 2>/dev/null || echo "n/a")
     mem=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%dM used / %dM total", (t-a)/1024, t/1024}' /proc/meminfo 2>/dev/null || echo "n/a")
-    storage=$(df -h / 2>/dev/null | awk 'NR==2{print $3" used / "$2" total"}' || echo "n/a")
+    storage=$(df -hP / 2>/dev/null | awk 'NR==2{print $3" used / "$2" total"}')
+    [ -n "$storage" ] || storage="n/a"
     temp=$(awk '{printf "%.1f°C", $1/1000}' "$TEMP" 2>/dev/null || echo "n/a")
     eth=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' || echo "down")
     wifi=$(cat /sys/class/net/wlan0/operstate 2>/dev/null || echo "absent")
