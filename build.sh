@@ -77,9 +77,43 @@ echo "== overlay =="
 if [ -d overlay ]; then
     $PRIV cp -a overlay/. "$ROOTFS/"
     for d in etc usr/lib/os-release usr/local mnt; do
-        [ -e "$ROOTFS/$d" ] && $PRIV chown -R root:root "$ROOTFS/$d" || true
+        if [ -e "$ROOTFS/$d" ]; then
+            $PRIV chown -R root:root "$ROOTFS/$d"
+        fi
     done
 fi
+
+# --- runlevels (apk post-install skips rc-update in chroot) ---
+$PRIV sh -c "echo 'rc_parallel=\"YES\"' >> '$ROOTFS/etc/rc.conf'"
+
+$PRIV mkdir -p "$ROOTFS/etc/runlevels/sysinit" \
+    "$ROOTFS/etc/runlevels/boot" \
+    "$ROOTFS/etc/runlevels/shutdown" \
+    "$ROOTFS/etc/runlevels/default"
+
+for s in devfs dmesg hwdrivers mdev procfs root swap sysfs cgroups; do
+    if [ -x "$ROOTFS/etc/init.d/$s" ]; then
+        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/sysinit/$s"
+    fi
+done
+
+for s in bootmisc hostname hwclock klogd localmount loopback modules seedrng sysctl syslog; do
+    if [ -x "$ROOTFS/etc/init.d/$s" ]; then
+        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/boot/$s"
+    fi
+done
+
+for s in killprocs mount-ro savecache; do
+    if [ -x "$ROOTFS/etc/init.d/$s" ]; then
+        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/shutdown/$s"
+    fi
+done
+
+for s in dropbear local; do
+    if [ -x "$ROOTFS/etc/init.d/$s" ]; then
+        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/default/$s"
+    fi
+done
 
 # --- license/notice ---
 $PRIV mkdir -p "$ROOTFS/usr/share/doc/alpenglow"
