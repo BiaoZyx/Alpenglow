@@ -101,7 +101,8 @@ __ag_git() {
 }
 
 __ag_prompt() {
-    local path git
+    local path git user
+    user=${USER:-$(id -un 2>/dev/null || echo root)}
     path=$(__ag_fold_path)
     git=$(__ag_git)
     printf '%s%s%s@%sall%s: %s%s%s%s$ ' \
@@ -148,6 +149,6 @@ backup() {
     local ts out
     ts=$(date +%Y%m%d-%H%M%S)
     out="$1/alpenglow-$ts.tar.gz"
-    tar czf "$out" "$HOME" /etc 2>/dev/null
+    ( cd / && tar czf "$out" "${HOME#/}" etc 2>/dev/null )
     echo "$out"
 }

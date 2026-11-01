@@ -77,7 +77,9 @@ echo "== overlay =="
 if [ -d overlay ]; then
     $PRIV cp -a overlay/. "$ROOTFS/"
     for d in etc usr/lib/os-release mnt; do
-        [ -e "$ROOTFS/$d" ] && $PRIV chown -R root:root "$ROOTFS/$d"
+        if [ -e "$ROOTFS/$d" ]; then
+            $PRIV chown -R root:root "$ROOTFS/$d"
+        fi
     done
 fi
 
@@ -86,9 +88,10 @@ $PRIV mkdir -p "$ROOTFS/usr/share/doc/alpenglow"
 $PRIV cp LICENSE NOTICE "$ROOTFS/usr/share/doc/alpenglow/"
 
 # --- firmware placeholder ---
-$PRIV mkdir -p "$ROOTFS$FIRMWARE_DIR"
+$PRIV mkdir -p "$ROOTFS$FIRMWARE_DIR" "$ROOTFS$FIRMWARE_ALT_DIR"
 if [ -d firmware ] && [ -n "$(ls -A firmware 2>/dev/null)" ]; then
     $PRIV cp firmware/* "$ROOTFS$FIRMWARE_DIR/" 2>/dev/null || true
+    $PRIV cp firmware/* "$ROOTFS$FIRMWARE_ALT_DIR/" 2>/dev/null || true
 fi
 
 # --- cleanup apk cache unless --keep-cache ---
