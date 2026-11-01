@@ -1,0 +1,77 @@
+#!/bin/sh
+# Alpenglow LED status daemon
+# GPIO 509 (sysfs), priority: heat > usb > online > ready
+
+LED_GPIO=509
+LED_DIR=/sys/class/gpio/gpio${LED_GPIO}
+LED_VAL=${LED_DIR}/value
+TEMP=/sys/class/thermal/thermal_zone0/temp
+USB_UDC=/tmp/usb/usb_gadget/cvitek/UDC
+HEAT_C=80000
+
+# fractional sleep sanity
+if ! sleep 0.01 2>/dev/null; then
+    echo "alpenglow-led: fractional sleep unsupported" >&2
+    exit 1
+fi
+
+# export GPIO and set output
+[ -d "$LED_DIR" ] || echo "$LED_GPIO" > /sys/class/gpio/export
+echo out > "$LED_DIR/direction"
+
+on()  { echo 1 > "$LED_VAL"; }
+off() { echo 0 > "$LED_VAL"; }
+
+pat_heat() {
+    i=0
+    while [ $i -lt 5 ]; do
+        on;  sleep 0.1
+        off; sleep 0.1
+        i=$((i + 1))
+    done
+}
+
+pat_usb() {
+    on;  sleep 0.2
+    off; sleep 0.2
+    on;  sleep 0.2
+    off; sleep 1.4
+}
+
+pat_online() {
+    on;  sleep 0.25
+    off; sleep 0.25
+    on;  sleep 0.5
+    off; sleep 1.0
+}
+
+pat_ready() {
+    on;  sleep 0.5
+    off; sleep 0.5
+}
+
+detect() {
+    if [ -r "$TEMP" ]; then
+        t=$(cat "$TEMP")
+        [ "$t" -gt "$HEAT_C" ] && { echo heat; return; }
+    fi
+    if [ ! -s "$USB_UDC" ]; then
+        echo usb; return
+    fi
+    if ip route 2>/dev/null | grep -q '^default'; then
+        echo online; return
+    fi
+    echo ready
+}
+
+trap 'off; exit 0' TERM INT
+trap 'off; exit 0' EXIT
+
+while :; do
+    case "$(detect)" in
+        heat)   pat_heat ;;
+        usb)    pat_usb ;;
+        online) pat_online ;;
+        ready)  pat_ready ;;
+    esac
+done

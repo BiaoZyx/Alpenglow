@@ -1,0 +1,21 @@
+#!/sbin/openrc-run
+description="Alpenglow LED status daemon"
+
+depend() {
+    need localmount
+    after usb-gadget dhcpcd iwd
+}
+
+start() {
+    ebegin "Starting Alpenglow LED"
+    start-stop-daemon --start --background \
+        --make-pidfile --pidfile /run/alpenglow-led.pid \
+        --exec /usr/local/sbin/alpenglow-led
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping Alpenglow LED"
+    start-stop-daemon --stop --pidfile /run/alpenglow-led.pid
+    eend $?
+}

@@ -76,10 +76,8 @@ $PRIV "$APK_STATIC" \
 echo "== overlay =="
 if [ -d overlay ]; then
     $PRIV cp -a overlay/. "$ROOTFS/"
-    for d in etc usr/lib/os-release mnt; do
-        if [ -e "$ROOTFS/$d" ]; then
-            $PRIV chown -R root:root "$ROOTFS/$d"
-        fi
+    for d in etc usr/lib/os-release usr/local mnt; do
+        [ -e "$ROOTFS/$d" ] && $PRIV chown -R root:root "$ROOTFS/$d" || true
     done
 fi
 
