@@ -1,0 +1,363 @@
+#!/bin/sh
+# Alpenglow control center
+
+VERSION="1.0.0"
+P=$(printf '\033[38;5;135m')
+P2=$(printf '\033[38;5;141m')
+D=$(printf '\033[2m')
+R=$(printf '\033[0m')
+
+USB_UDC=/tmp/usb/usb_gadget/cvitek/UDC
+TEMP=/sys/class/thermal/thermal_zone0/temp
+
+usage() {
+    printf "${P}Alpenglow %s${R} - control center\n\n" "$VERSION"
+    cat <<EOF
+  all info           system overview
+  all wifi [SSID]    scan/connect Wi-Fi (interactive if no arg)
+  all wifi list      saved networks
+  all wifi off       disconnect Wi-Fi
+  all usb            USB gadget status
+  all usb restart    restart USB gadget
+  all net            interfaces, IP, routes, DNS
+  all ssh            SSH address and fingerprint
+  all pkg <op> ...   sync|search|add|del
+  all gpio <op> ...  list|func|set|get|put
+  all doctor         self-check services and tools
+  all temp           thermal and CPU frequency
+  all backup [dir]   back up /home and /etc
+  all reboot         reboot
+  all poweroff       power off
+  all version        version
+EOF
+}
+
+info() {
+    local host kern up mem storage temp usb eth wifi
+    host=$(hostname 2>/dev/null || echo "alpenglow")
+    kern=$(uname -r 2>/dev/null || echo "n/a")
+    up=$(awk '{printf "%dh%02dm", $1/3600, ($1%3600)/60}' /proc/uptime 2>/dev/null || echo "n/a")
+    mem=$(awk '/MemTotal/{t=$2}/MemAvailable/{a=$2}END{printf "%dM used / %dM total", (t-a)/1024, t/1024}' /proc/meminfo 2>/dev/null || echo "n/a")
+    storage=$(df -h / 2>/dev/null | awk 'NR==2{print $3" used / "$2" total"}' || echo "n/a")
+    temp=$(awk '{printf "%.1f°C", $1/1000}' "$TEMP" 2>/dev/null || echo "n/a")
+    eth=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' || echo "down")
+    wifi=$(cat /sys/class/net/wlan0/operstate 2>/dev/null || echo "absent")
+    usb=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' || echo "down")
+
+    printf "${P}Alpenglow %s${R} on %s\n" "$VERSION" "$host"
+    printf "  ${D}%-8s${R} %s\n" "kernel"  "$kern"
+    printf "  ${D}%-8s${R} %s\n" "uptime"  "$up"
+    printf "  ${D}%-8s${R} %s\n" "memory"  "$mem"
+    printf "  ${D}%-8s${R} %s\n" "storage" "$storage"
+    printf "  ${D}%-8s${R} %s\n" "temp"    "$temp"
+    printf "  ${D}%-8s${R} %s\n" "eth0"    "$eth"
+    printf "  ${D}%-8s${R} %s\n" "wlan0"   "$wifi"
+    printf "  ${D}%-8s${R} %s\n" "usb0"    "$usb"
+}
+
+wifi() {
+    if ! command -v iwctl >/dev/null 2>&1; then
+        echo "iwctl not installed. Run: apk add iwd" >&2
+        return 1
+    fi
+    case "$1" in
+        list) iwctl known-networks list ;;
+        off)  iwctl station wlan0 disconnect ;;
+        "")
+            iwctl station wlan0 scan
+            sleep 2
+            iwctl station wlan0 get-networks
+            printf "SSID: "
+            read -r ssid
+            [ -n "$ssid" ] || return 1
+            printf "Password: "
+            stty -echo 2>/dev/null
+            read -r psk
+            stty echo 2>/dev/null
+            echo
+            iwctl --passphrase "$psk" station wlan0 connect "$ssid"
+            ;;
+        *)
+            printf "Password: "
+            stty -echo 2>/dev/null
+            read -r psk
+            stty echo 2>/dev/null
+            echo
+            iwctl --passphrase "$psk" station wlan0 connect "$1"
+            ;;
+    esac
+}
+
+usb() {
+    if [ "$1" = "restart" ]; then
+        rc-service usb-gadget restart
+        return
+    fi
+    local udc usb0 ssh_addr
+    if [ -s "$USB_UDC" ]; then
+        udc=$(cat "$USB_UDC")
+    else
+        udc="not configured"
+    fi
+    usb0=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' || echo "down")
+    ssh_addr=$(echo "$usb0" | cut -d/ -f1)
+
+    printf "${P}USB gadget${R}\n"
+    printf "  ${D}%-10s${R} %s\n" "UDC"  "$udc"
+    printf "  ${D}%-10s${R} %s\n" "usb0" "$usb0"
+    if [ -n "$ssh_addr" ] && [ "$ssh_addr" != "down" ]; then
+        printf "  ${D}%-10s${R} root@%s\n" "ssh" "$ssh_addr"
+    else
+        printf "  ${D}%-10s${R} ${D}%s${R}\n" "ssh" "unavailable; run 'rc-service usb-gadget start'"
+    fi
+}
+
+net() {
+    echo "== interfaces =="
+    ip -brief addr 2>/dev/null || echo "ip not available"
+    echo
+    echo "== ipv4 routes =="
+    ip -4 route 2>/dev/null || true
+    echo
+    echo "== ipv6 routes =="
+    ip -6 route 2>/dev/null || true
+    echo
+    echo "== resolv.conf =="
+    cat /etc/resolv.conf 2>/dev/null || echo "n/a"
+}
+
+__ssh_backend() {
+    if command -v dropbearkey >/dev/null 2>&1; then
+        echo dropbear
+    elif command -v sshd >/dev/null 2>&1; then
+        echo openssh
+    else
+        echo none
+    fi
+}
+
+ssh_info() {
+    local backend usb0 ssh_addr fp pw
+    backend=$(__ssh_backend)
+    if [ "$backend" = "none" ]; then
+        echo "no SSH server installed. Run: apk add dropbear" >&2
+        return 1
+    fi
+
+    usb0=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+    [ -n "$usb0" ] || usb0="unavailable"
+
+    case "$backend" in
+        dropbear)
+            if [ -f /etc/dropbear/dropbear_ed25519_host_key ]; then
+                fp=$(dropbearkey -y -f /etc/dropbear/dropbear_ed25519_host_key 2>/dev/null | awk '/Fingerprint/{print $2}')
+            else
+                fp="host key missing"
+            fi
+            if grep -q 'DROPBEAR_OPTS.*-w' /etc/conf.d/dropbear 2>/dev/null; then
+                pw="disabled"
+            else
+                pw="enabled"
+            fi
+            printf "${P}SSH (Dropbear)${R}\n"
+            ;;
+        openssh)
+            if [ -f /etc/ssh/ssh_host_ed25519_key.pub ]; then
+                fp=$(ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub 2>/dev/null | awk '{print $2}')
+            else
+                fp="host key missing"
+            fi
+            if grep -qi '^PasswordAuthentication yes' /etc/ssh/sshd_config 2>/dev/null; then
+                pw="enabled"
+            else
+                pw="disabled"
+            fi
+            printf "${P}SSH (OpenSSH)${R}\n"
+            ;;
+    esac
+
+    printf "  ${D}%-12s${R} root@%s\n" "address" "$usb0"
+    printf "  ${D}%-12s${R} %s\n" "fingerprint" "$fp"
+    printf "  ${D}%-12s${R} %s\n" "password" "$pw"
+    if [ "$pw" = "enabled" ]; then
+        printf "  ${D}%-12s${R} ${D}%s${R}\n" "" "run 'passwd' to set/change root password"
+    fi
+}
+
+pkg() {
+    local op="$1"
+    shift
+    if ! command -v apk >/dev/null 2>&1; then
+        echo "apk not found; is this Alpine?" >&2
+        return 1
+    fi
+    case "$op" in
+        sync)
+            apk add --no-cache $(grep -v '^#' /etc/apk/world | tr '\n' ' ')
+            ;;
+        search) apk search "$@" ;;
+        add)    apk add "$@" ;;
+        del)    apk del "$@" ;;
+        *)      echo "usage: all pkg sync|search|add|del ..." >&2; return 1 ;;
+    esac
+}
+
+gpio() {
+    case "$1" in
+        list)
+            if command -v gpiodetect >/dev/null 2>&1; then
+                gpiodetect
+                echo
+                gpioinfo 2>/dev/null | head -40
+            else
+                echo "gpiodetect not installed. Run: apk add libgpiod" >&2
+                return 1
+            fi
+            ;;
+        func)
+            if command -v duo-pinmux >/dev/null 2>&1; then
+                duo-pinmux -r "$2"
+            else
+                echo "duo-pinmux not installed (planned for v1.1)" >&2
+                return 1
+            fi
+            ;;
+        set)
+            if command -v duo-pinmux >/dev/null 2>&1; then
+                duo-pinmux -w "$2"
+            else
+                echo "duo-pinmux not installed (planned for v1.1)" >&2
+                return 1
+            fi
+            ;;
+        get)
+            if command -v gpioget >/dev/null 2>&1; then
+                gpioget "$2" "$3"
+            else
+                echo "gpioget not installed. Run: apk add libgpiod" >&2
+                return 1
+            fi
+            ;;
+        put)
+            if command -v gpioset >/dev/null 2>&1; then
+                gpioset "$2" "$3=$4"
+            else
+                echo "gpioset not installed. Run: apk add libgpiod" >&2
+                return 1
+            fi
+            ;;
+        *) echo "usage: all gpio list|func <pin>|set <pin>/<func>|get <chip> <line>|put <chip> <line> <0|1>" >&2; return 1 ;;
+    esac
+}
+
+doctor() {
+    local ssh_backend
+    ssh_backend=$(__ssh_backend)
+
+    echo "== services =="
+    for svc in dhcpcd iwd dnsmasq usb-gadget alpenglow-led alpenglow-firstboot; do
+        if rc-service "$svc" status >/dev/null 2>&1; then
+            printf "  ${P}%-20s${R} started\n" "$svc"
+        elif rc-service "$svc" status 2>&1 | grep -q 'stopped'; then
+            printf "  ${D}%-20s${R} stopped\n" "$svc"
+        else
+            printf "  ${D}%-20s${R} not found\n" "$svc"
+        fi
+    done
+
+    echo
+    echo "== ssh =="
+    case "$ssh_backend" in
+        dropbear) printf "  ${P}%-20s${R} dropbear\n" "backend" ;;
+        openssh)  printf "  ${P}%-20s${R} openssh\n" "backend" ;;
+        *)        printf "  ${D}%-20s${R} none\n" "backend" ;;
+    esac
+
+    echo
+    echo "== shell =="
+    if [ -n "$PS1" ]; then
+        printf "  ${P}%-20s${R} ok\n" "PS1"
+    else
+        printf "  ${D}%-20s${R} default\n" "PS1"
+    fi
+    if [ -n "$HISTFILE" ]; then
+        printf "  ${P}%-20s${R} %s\n" "HISTFILE" "$HISTFILE"
+    else
+        printf "  ${D}%-20s${R} unset\n" "HISTFILE"
+    fi
+    printf "  ${P}%-20s${R} %s\n" "locale" "${LANG:-unset}"
+
+    echo
+    echo "== tools =="
+    for tool in iwctl gpioget gpioset duo-pinmux; do
+        if command -v "$tool" >/dev/null 2>&1; then
+            printf "  ${P}%-20s${R} ok\n" "$tool"
+        else
+            printf "  ${D}%-20s${R} missing\n" "$tool"
+        fi
+    done
+
+    echo
+    echo "== hardware =="
+    if [ -s "$USB_UDC" ]; then
+        printf "  ${P}%-20s${R} configured\n" "USB gadget"
+    else
+        printf "  ${D}%-20s${R} not configured\n" "USB gadget"
+    fi
+    if [ -r "$TEMP" ]; then
+        printf "  ${P}%-20s${R} %s\n" "thermal" "$(awk '{printf "%.1f°C",$1/1000}' "$TEMP")"
+    else
+        printf "  ${D}%-20s${R} missing\n" "thermal"
+    fi
+    if ls /lib/firmware/aic8800/*.bin >/dev/null 2>&1 || ls /mnt/system/firmware/aic8800/*.bin >/dev/null 2>&1; then
+        printf "  ${P}%-20s${R} ok\n" "AIC8800 firmware"
+    else
+        printf "  ${D}%-20s${R} missing\n" "AIC8800 firmware"
+    fi
+}
+
+temp() {
+    if [ -r "$TEMP" ]; then
+        printf "  %-20s %s\n" "$(cat /sys/class/thermal/thermal_zone0/type 2>/dev/null || echo thermal_zone0)" \
+            "$(awk '{printf "%.1f°C",$1/1000}' "$TEMP")"
+    else
+        echo "thermal sensor not exposed by kernel" >&2
+    fi
+    if [ -r /proc/cpuinfo ]; then
+        awk '/BogoMIPS|cpu MHz|model name/{print "  " $0}' /proc/cpuinfo 2>/dev/null | head -8
+    fi
+}
+
+backup() {
+    local dir="${1:-.}"
+    if [ ! -d "$dir" ] || [ ! -w "$dir" ]; then
+        echo "cannot write to $dir" >&2
+        return 1
+    fi
+    local ts out
+    ts=$(date +%Y%m%d-%H%M%S)
+    out="$dir/alpenglow-$ts.tar.gz"
+    ( cd / && tar czf "$out" home etc 2>/dev/null ) || {
+        echo "backup failed" >&2
+        return 1
+    }
+    echo "$out"
+}
+
+case "$1" in
+    ""|help|-h|--help) usage ;;
+    info)     info ;;
+    wifi)     shift; wifi "$@" ;;
+    usb)      shift; usb "$@" ;;
+    net)      net ;;
+    ssh)      ssh_info ;;
+    pkg)      shift; pkg "$@" ;;
+    gpio)     shift; gpio "$@" ;;
+    doctor)   doctor ;;
+    temp)     temp ;;
+    backup)   shift; backup "$@" ;;
+    reboot)   reboot ;;
+    poweroff) poweroff ;;
+    version)  echo "Alpenglow $VERSION" ;;
+    *) echo "unknown command: $1" >&2; usage; exit 1 ;;
+esac
