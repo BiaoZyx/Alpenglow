@@ -1,0 +1,12 @@
+#!/bin/sh
+# 等待默认路由出现（最多 30 秒）
+i=0
+while [ $i -lt 30 ]; do
+    ip route 2>/dev/null | grep -q '^default' && break
+    sleep 1
+    i=$((i + 1))
+done
+
+# 一次性同步，失败不阻塞启动
+ntpd -q -n -p pool.ntp.org 2>/dev/null || \
+    ntpd -q -n -p time.cloudflare.com 2>/dev/null || true
