@@ -84,7 +84,11 @@ if [ -d overlay ]; then
 fi
 
 # --- runlevels (apk post-install skips rc-update in chroot) ---
-$PRIV sh -c "echo 'rc_parallel=\"YES\"' >> '$ROOTFS/etc/rc.conf'"
+if grep -q '^#\?rc_parallel=' "$ROOTFS/etc/rc.conf"; then
+    $PRIV sed -i 's/^#\?rc_parallel=.*/rc_parallel="YES"/' "$ROOTFS/etc/rc.conf"
+else
+    $PRIV sh -c "echo 'rc_parallel=\"YES\"' >> '$ROOTFS/etc/rc.conf'"
+fi
 
 $PRIV mkdir -p "$ROOTFS/etc/runlevels/sysinit" \
     "$ROOTFS/etc/runlevels/boot" \

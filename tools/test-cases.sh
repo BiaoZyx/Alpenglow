@@ -97,6 +97,20 @@ grep -q 'EnableNetworkConfiguration=false' /etc/iwd/main.conf 2>/dev/null \
 grep -q 'dhcp-range=192.168.42.2,192.168.42.242' /etc/dnsmasq.conf 2>/dev/null \
     && pass "dnsmasq range" || fail "dnsmasq range" "unexpected range"
 
+echo "== P4 configs =="
+grep -q 'tmpfs.*\/tmp.*size=64M' /etc/fstab 2>/dev/null \
+    && pass "fstab /tmp 64M" || fail "fstab /tmp 64M" "missing"
+grep -q 'tmpfs.*\/var\/log.*size=16M' /etc/fstab 2>/dev/null \
+    && pass "fstab /var/log 16M" || fail "fstab /var/log 16M" "missing"
+grep -q '^ttyS0::respawn' /etc/inittab 2>/dev/null \
+    && pass "inittab ttyS0" || fail "inittab ttyS0" "missing"
+grep -q '^tty1::' /etc/inittab 2>/dev/null \
+    && fail "inittab tty1 removed" "still present" || pass "inittab tty1 removed"
+grep -q '^vm.swappiness = 10' /etc/sysctl.d/99-alpenglow.conf 2>/dev/null \
+    && pass "sysctl swappiness" || fail "sysctl swappiness" "missing"
+grep -q '^rc_parallel="YES"' /etc/rc.conf 2>/dev/null \
+    && pass "rc_parallel YES" || fail "rc_parallel YES" "missing"
+
 echo "== hardware (skipped in chroot) =="
 skip "thermal" "chroot /sys is host"
 skip "led"     "requires real GPIO 509"
