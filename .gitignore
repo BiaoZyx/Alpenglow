@@ -1,4 +1,12 @@
+# build output
 out/
+
+# images
 *.img
 *.img.xz
+*.img.zip
 *.sha256
+*.img.xz.sha256
+
+# bootloader (extracted from official img)
+firmware/boot/

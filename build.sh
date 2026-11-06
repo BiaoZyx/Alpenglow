@@ -17,6 +17,8 @@ BOARD="duos"
 ROOTFS="./out/rootfs"
 INTERACTIVE=0
 KEEP_CACHE=0
+ALPENGLOW_VERSION=$(grep '^VERSION_ID=' overlay/usr/lib/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
+[ -n "$ALPENGLOW_VERSION" ] || ALPENGLOW_VERSION="1.0.0"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -40,6 +42,27 @@ echo "board   : $BOARD_NAME"
 echo "arch    : $ARCH"
 echo "rootfs  : $ROOTFS"
 echo "world   : $(tr '\n' ' ' < config/world)"
+
+# --- host build dependencies ---
+REQUIRED="dd mke2fs truncate mkfs.vfat mcopy xz sha256sum chroot sfdisk"
+MISSING=""
+for t in $REQUIRED; do
+    command -v "$t" >/dev/null 2>&1 || MISSING="$MISSING $t"
+done
+if [ -n "$MISSING" ]; then
+    echo "error: missing host tools: $MISSING" >&2
+    exit 1
+fi
+
+# qemu for cross-arch chroot
+if [ "$ARCH" != "$(uname -m)" ]; then
+    [ -e /proc/sys/fs/binfmt_misc/qemu-${ARCH} ] || {
+        echo "error: qemu-${ARCH} binfmt not registered" >&2
+        echo "  doas apk add qemu-${ARCH} qemu-openrc" >&2
+        echo "  doas sh -c 'cat /usr/lib/binfmt.d/qemu-${ARCH}.conf > /proc/sys/fs/binfmt_misc/register'" >&2
+        exit 1
+    }
+fi
 
 # --- doas/sudo discovering ---
 if [ "$(id -u)" -eq 0 ]; then
@@ -76,7 +99,7 @@ $PRIV "$APK_STATIC" \
 echo "== overlay =="
 if [ -d overlay ]; then
     $PRIV cp -a overlay/. "$ROOTFS/"
-    for d in etc usr/lib/os-release usr/local mnt; do
+    for d in etc usr/lib/os-release usr/local mnt dev proc sys var run; do
         if [ -e "$ROOTFS/$d" ]; then
             $PRIV chown -R root:root "$ROOTFS/$d"
         fi
@@ -135,5 +158,50 @@ if [ "$KEEP_CACHE" = "0" ]; then
     $PRIV rm -rf "$ROOTFS/var/cache/apk/"* 2>/dev/null || true
 fi
 
+# --- packaging ---
+echo "== packaging =="
+
+IMG="out/alpenglow-${BOARD_NAME}-${ALPENGLOW_VERSION}.img"
+BOOT_IMG="out/boot.vfat"
+ROOTFS_IMG="out/rootfs.ext4"
+
+# boot partition
+$PRIV dd if=/dev/zero of="$BOOT_IMG" bs=1M count="$BOOT_SIZE_MB" status=none
+$PRIV mkfs.vfat -F 32 -n boot "$BOOT_IMG" >/dev/null
+$PRIV env MTOOLS_SKIP_CHECK=1 mcopy -i "$BOOT_IMG" firmware/boot/fip.bin ::fip.bin
+$PRIV env MTOOLS_SKIP_CHECK=1 mcopy -i "$BOOT_IMG" firmware/boot/boot.sd ::boot.sd
+
+# rootfs partition
+$PRIV truncate -s "${ROOTFS_SIZE_MB}M" "$ROOTFS_IMG"
+$PRIV mke2fs -t ext4 -L rootfs -d "$ROOTFS" -F "$ROOTFS_IMG" >/dev/null
+
+# assemble image (+1 MB for MBR and tail sector)
+TOTAL_MB=$((BOOT_SIZE_MB + LOGO_SIZE_MB + ROOTFS_SIZE_MB + 1))
+$PRIV dd if=/dev/zero of="$IMG" bs=1M count="$TOTAL_MB" status=none
+$PRIV dd if="$BOOT_IMG" of="$IMG" bs=512 seek="$BOOT_LBA" conv=notrunc status=none
+$PRIV dd if="$ROOTFS_IMG" of="$IMG" bs=512 seek="$ROOTFS_LBA" conv=notrunc status=none
+
+# partition table (MBR), must match official layout
+$PRIV sfdisk "$IMG" <<EOF
+label: dos
+start=${BOOT_LBA}, size=$((BOOT_SIZE_MB * 2048)), type=c, bootable
+start=${LOGO_LBA}, size=$((LOGO_SIZE_MB * 2048)), type=0
+start=${ROOTFS_LBA}, size=$((ROOTFS_SIZE_MB * 2048)), type=83
+EOF
+sync
+
+# verify
+$PRIV sfdisk -l "$IMG"
+
+# compress
+echo "compressing $IMG (this may take several minutes)"
+$PRIV xz -9 -T0 --block-size=64MiB -k -f "$IMG"
+$PRIV sh -c "sha256sum '$IMG.xz' > '$IMG.xz.sha256'"
+
+echo "image:  $IMG"
+echo "xz:     $IMG.xz"
+echo "size:   $(du -h "$IMG.xz" 2>/dev/null | cut -f1)"
+
+# --- the end ---
 echo "== done =="
 echo "rootfs at: $ROOTFS"
