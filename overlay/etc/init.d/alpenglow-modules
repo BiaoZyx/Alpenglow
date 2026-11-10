@@ -1,0 +1,55 @@
+#!/sbin/openrc-run
+description="Alpenglow kernel module loader (cv181x base + aic8800)"
+
+depend() {
+    need localmount
+    before iwd
+    before usb-gadget
+}
+
+KO=/mnt/system/ko
+
+load_one() {
+    [ -f "$KO/$1" ] || return 0
+    lsmod 2>/dev/null | grep -q "^${1%.ko} " && return 0
+    insmod "$KO/$1" 2>/dev/null
+}
+
+set_gpio() {
+    local num="$1" val="$2" path="/sys/class/gpio/gpio$1"
+    [ -d "$path" ] || echo "$num" > /sys/class/gpio/export 2>/dev/null
+    echo out > "$path/direction" 2>/dev/null
+    sleep 0.1
+    echo "$val" > "$path/value" 2>/dev/null
+}
+
+start() {
+    ebegin "Loading Alpenglow kernel modules"
+
+    # 1. Cvitek base (order matters)
+    load_one cv181x_sys.ko
+    load_one cv181x_base.ko
+    load_one cv181x_rtos_cmdqu.ko
+    load_one cv181x_clock_cooling.ko
+    load_one cv181x_rtc.ko
+
+    # 2. GPIO init (hardware V1.1, BT wake)
+    set_gpio 465 0
+    set_gpio 362 1
+
+    # 3. Wi-Fi / BT (0.5s delay after bsp, per duo-init.sh)
+    load_one aic8800_bsp.ko
+    sleep 0.5
+    load_one aic8800_fdrv.ko
+    load_one aic8800_btlpm.ko
+
+    # 4. PWM
+    load_one cv181x_pwm.ko
+
+    eend 0
+}
+
+stop() {
+    ebegin "Stopping Alpenglow modules (no-op)"
+    eend 0
+}
