@@ -147,10 +147,16 @@ $PRIV mkdir -p "$ROOTFS/usr/share/doc/alpenglow"
 $PRIV cp LICENSE NOTICE "$ROOTFS/usr/share/doc/alpenglow/"
 
 # --- firmware placeholder ---
-$PRIV mkdir -p "$ROOTFS$FIRMWARE_DIR" "$ROOTFS$FIRMWARE_ALT_DIR"
-if [ -d firmware ] && [ -n "$(ls -A firmware 2>/dev/null)" ]; then
-    $PRIV cp firmware/* "$ROOTFS$FIRMWARE_DIR/" 2>/dev/null || true
-    $PRIV cp firmware/* "$ROOTFS$FIRMWARE_ALT_DIR/" 2>/dev/null || true
+# --- AIC8800 firmware ---
+if [ -d firmware/aic8800 ]; then
+    $PRIV mkdir -p "$ROOTFS/mnt/system/firmware/aic8800"
+    $PRIV cp firmware/aic8800/* "$ROOTFS/mnt/system/firmware/aic8800/"
+fi
+
+# --- kernel modules (all .ko + loadsystemko.sh) ---
+if [ -d firmware/ko ]; then
+    $PRIV mkdir -p "$ROOTFS/mnt/system/ko"
+    $PRIV cp -a firmware/ko/. "$ROOTFS/mnt/system/ko/"
 fi
 
 # --- cleanup apk cache unless --keep-cache ---

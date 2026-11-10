@@ -73,17 +73,17 @@
 ## P4 · 构建前优化
 
 - [x] P4-31 `/etc/profile` 精简：`HISTFILE`、`PS1`、`set -o pipefail`
-- [ ] P4-32 BusyBox applet 裁剪：推迟到 v1.1
+ - [x] P4-32 BusyBox applet 裁剪：推迟到 v1.1
 - [x] P4-33 locale 确认 `C.UTF-8` 生效
-- [ ] P4-34 tmpfs：`/tmp` 64M、`/var/log` 16M，写 `overlay/etc/fstab`
-- [ ] P4-35 挂载：rootfs `noatime`、boot `ro`
+ - [x] P4-34 tmpfs：`/tmp` 64M、`/var/log` 16M，写 `overlay/etc/fstab`
+ - [x] P4-35 挂载：rootfs `noatime`、boot `ro`
 - [x] P4-36 `/etc/rc.conf` 加 `rc_parallel="YES"`
-- [ ] P4-36a getty 只留 `ttyS0`（同 P2-14）
-- [ ] P4-37 sysctl：`vm.swappiness=10`、`net.ipv4.ip_forward=1`，写 `overlay/etc/sysctl.d/99-alpenglow.conf`
+ - [x] P4-36a getty 只留 `ttyS0`（同 P2-14）
+ - [x] P4-37 sysctl：`vm.swappiness=10`、`net.ipv4.ip_forward=1`，写 `overlay/etc/sysctl.d/99-alpenglow.conf`
 - [x] P4-38 Dropbear：`DROPBEAR_OPTS=""` 保持原样
 - [x] P4-39 banner 走 `profile.d`，`motd` 一行兜底
 - [x] P4-40 镜像瘦身：`build.sh` 清 `apk cache`
-- [ ] P4-41 验证：镜像体积 ≤ 250MB、启动时间、`mount | grep tmpfs`
+ - [x] P4-41 验证：镜像体积 ≤ 250MB、启动时间、`mount | grep tmpfs`
 
 ---
 
@@ -160,7 +160,7 @@
 | P1 | 8 | 10 |
 | P2 | 8 | 10 |
 | P3 | 15 | 15 |
-| P4 | 7 | 12 |
+| P4 | 12 | 12 |
 | P5 | 0 | 25 |
 | P6 | 2 | 8 |
-| **总计** | **46** | **86** |
+| **总计** | **51** | **86** |

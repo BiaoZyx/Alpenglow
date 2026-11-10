@@ -1,12 +1,12 @@
 # build output
 out/
 
-# images
+# images (899MB official img, build artifacts)
 *.img
 *.img.xz
 *.img.zip
 *.sha256
 *.img.xz.sha256
 
-# bootloader (extracted from official img)
-firmware/boot/
+# note: firmware/boot/, firmware/aic8800/, firmware/ko/ are tracked
+# they are build inputs, extracted from official v2.0.1 image
