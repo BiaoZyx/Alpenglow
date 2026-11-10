@@ -43,18 +43,23 @@ start() {
     fi
 
     # 2. machine-id
-        if [ ! -s /etc/machine-id ]; then
-            dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n' > /etc/machine-id || FAIL=1
-        fi
+    if [ ! -s /etc/machine-id ]; then
+        dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n' > /etc/machine-id || FAIL=1
+    fi
 
     # 3. Dropbear ed25519 host key
-        if [ ! -f /etc/dropbear/dropbear_ed25519_host_key ]; then
-            mkdir -p /etc/dropbear
-            chmod 700 /etc/dropbear
-            dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1 || FAIL=1
-        fi
+    if [ ! -f /etc/dropbear/dropbear_ed25519_host_key ]; then
+        mkdir -p /etc/dropbear
+        chmod 700 /etc/dropbear
+        dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1 || FAIL=1
+    fi
 
-    # 4. 标记 + 自我禁用（仅成功时）
+    # 4. default root password (no serial console case)
+    if ! grep -q '^root:[^:!*]' /etc/shadow 2>/dev/null; then
+        echo "root:alpenglow" | chpasswd 2>/dev/null
+    fi
+
+    # 5. 标记 + 自我禁用（仅成功时）
     if [ "$FAIL" -eq 0 ]; then
         mkdir -p "$(dirname "$MARK")"
         touch "$MARK"
