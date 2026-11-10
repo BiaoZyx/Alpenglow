@@ -179,7 +179,9 @@ $PRIV env MTOOLS_SKIP_CHECK=1 mcopy -i "$BOOT_IMG" firmware/boot/boot.sd ::boot.
 
 # rootfs partition
 $PRIV truncate -s "${ROOTFS_SIZE_MB}M" "$ROOTFS_IMG"
-$PRIV mke2fs -t ext4 -L rootfs -d "$ROOTFS" -F "$ROOTFS_IMG" >/dev/null
+$PRIV mke2fs -t ext4 -L rootfs \
+    -O ^orphan_file,^metadata_csum_seed \
+    -d "$ROOTFS" -F "$ROOTFS_IMG" >/dev/null
 
 # assemble image (+1 MB for MBR and tail sector)
 TOTAL_MB=$((BOOT_SIZE_MB + LOGO_SIZE_MB + ROOTFS_SIZE_MB + 1))
