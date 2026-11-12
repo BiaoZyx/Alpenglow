@@ -129,25 +129,25 @@ $PRIV mkdir -p "$ROOTFS/etc/runlevels/sysinit" \
 
 for s in devfs dmesg hwdrivers mdev procfs root swap sysfs cgroups; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
-        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/sysinit/$s"
+        $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/sysinit/$s"
     fi
 done
 
-for s in bootmisc hostname hwclock klogd localmount loopback modules seedrng sysctl syslog; do
+for s in alpenglow-modules bootmisc hostname hwclock klogd localmount loopback modules seedrng sysctl syslog; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
-        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/boot/$s"
+        $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/boot/$s"
     fi
 done
 
 for s in killprocs mount-ro savecache; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
-        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/shutdown/$s"
+        $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/shutdown/$s"
     fi
 done
 
-for s in dropbear local; do
+for s in alpenglow-firstboot alpenglow-led dhcpcd dropbear iwd local usb-gadget; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
-        $PRIV ln -sf "../init.d/$s" "$ROOTFS/etc/runlevels/default/$s"
+        $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/default/$s"
     fi
 done
 
