@@ -1,9 +1,11 @@
 alpine-base
+cloud-utils-growpart
 dhcpcd
 dnsmasq
 dropbear
 e2fsprogs-extra
 iwd
 libgpiod
+openrc-init
 parted
 util-linux

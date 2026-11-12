@@ -105,12 +105,21 @@ if [ -d overlay ]; then
         fi
     done
 fi
+# use openrc-init instead of busybox init (busybox on this build lacks init applet)
+$PRIV rm -f "$ROOTFS/sbin/init"
+$PRIV ln -sf /sbin/openrc-init "$ROOTFS/sbin/init"
+
+$PRIV ln -sf /sbin/init "$ROOTFS/linuxrc"
+$PRIV ln -sf /sbin/init "$ROOTFS/init"
+
+# --- temporary: skip rootfs expand on first boot ---
+$PRIV touch "$ROOTFS/etc/alpenglow-skip-expand"
 
 # --- runlevels (apk post-install skips rc-update in chroot) ---
 if grep -q '^#\?rc_parallel=' "$ROOTFS/etc/rc.conf"; then
-    $PRIV sed -i 's/^#\?rc_parallel=.*/rc_parallel="YES"/' "$ROOTFS/etc/rc.conf"
+    $PRIV sed -i 's/^#\?rc_parallel=.*/rc_parallel="NO"/' "$ROOTFS/etc/rc.conf"
 else
-    $PRIV sh -c "echo 'rc_parallel=\"YES\"' >> '$ROOTFS/etc/rc.conf'"
+    $PRIV sh -c "echo 'rc_parallel=\"NO\"' >> '$ROOTFS/etc/rc.conf'"
 fi
 
 $PRIV mkdir -p "$ROOTFS/etc/runlevels/sysinit" \
