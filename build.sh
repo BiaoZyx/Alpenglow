@@ -142,7 +142,7 @@ for s in devfs dmesg hwdrivers mdev procfs root swap sysfs cgroups; do
     fi
 done
 
-for s in alpenglow-modules bootmisc hostname hwclock klogd localmount loopback modules seedrng sysctl syslog; do
+for s in alpenglow-modules wpa_cli bootmisc hostname hwclock klogd localmount loopback modules seedrng sysctl syslog; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
         $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/boot/$s"
     fi
@@ -154,7 +154,7 @@ for s in killprocs mount-ro savecache; do
     fi
 done
 
-for s in agetty alpenglow-firstboot alpenglow-led dhcpcd dropbear iwd local usb-gadget; do
+for s in agetty alpenglow-firstboot alpenglow-led dhcpcd dnsmasq dropbear wpa_supplicant local usb-gadget; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
         $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/default/$s"
     fi

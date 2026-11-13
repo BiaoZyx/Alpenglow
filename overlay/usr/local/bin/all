@@ -13,23 +13,34 @@ TEMP=/sys/class/thermal/thermal_zone0/temp
 usage() {
     printf "${P}Alpenglow %s${R} - control center\n\n" "$VERSION"
     cat <<EOF
-  all info           system overview
-  all wifi [SSID]    scan/connect Wi-Fi (interactive if no arg)
-  all wifi list      saved networks
-  all wifi off       disconnect Wi-Fi
-  all usb            USB gadget status
-  all usb restart    restart USB gadget
-  all net            interfaces, IP, routes, DNS
-  all ssh            SSH address and fingerprint
-  all pkg <op> ...   sync|search|add|del
-  all gpio <op> ...  list|func|set|get|put
-  all doctor         self-check services and tools
-  all temp           thermal and CPU frequency
-  all backup [dir]   back up /home and /etc
-  all growfs         expand rootfs to fill the SD card
-  all reboot         reboot
-  all poweroff       power off
-  all version        version
+  all info                  system overview
+  all net                   interfaces, IP, routes, DNS
+  all ssh                   SSH address and fingerprint
+  all doctor                self-check services and tools
+  all temp                  thermal and CPU frequency
+  all growfs                expand rootfs to fill the SD card
+  all backup [dir]          back up /home and /etc
+  all reboot                reboot
+  all poweroff              power off
+  all version               version
+
+  all wifi                  Wi-Fi control (wpa_supplicant)
+    all wifi scan           scan networks
+    all wifi list           saved networks
+    all wifi status         current connection + IP
+    all wifi connect <SSID> [password] [priority]
+    all wifi select <id>    switch to saved network by id
+    all wifi enable <id>    enable saved network
+    all wifi disable <id>   disable saved network
+    all wifi disconnect     drop current connection
+    all wifi reassociate    reconnect to current network
+    all wifi save           persist config to disk
+
+  all usb                   USB RNDIS gadget status
+    all usb restart         restart gadget
+
+  all pkg <op> ...          sync | search | add | del
+  all gpio <op> ...         list | func | set | get | put
 EOF
 }
 
@@ -60,34 +71,64 @@ info() {
 }
 
 wifi() {
-    if ! command -v iwctl >/dev/null 2>&1; then
-        echo "iwctl not installed. Run: apk add iwd" >&2
+    if ! command -v wpa_cli >/dev/null 2>&1; then
+        echo "wpa_cli not installed. Run: apk add wpa_supplicant" >&2
         return 1
     fi
     case "$1" in
-        list) iwctl known-networks list ;;
-        off)  iwctl station wlan0 disconnect ;;
-        "")
-            iwctl station wlan0 scan
-            sleep 2
-            iwctl station wlan0 get-networks
-            printf "SSID: "
-            read -r ssid
-            [ -n "$ssid" ] || return 1
-            printf "Password: "
-            stty -echo 2>/dev/null
-            read -r psk
-            stty echo 2>/dev/null
-            echo
-            iwctl --passphrase "$psk" station wlan0 connect "$ssid"
+        ""|help)
+            printf "${P}all wifi${R} - Wi-Fi control (wpa_supplicant)\n\n"
+            cat <<EOF
+  all wifi scan           scan networks
+  all wifi list           saved networks
+  all wifi status         current connection + IP
+  all wifi connect <SSID> [password] [priority]
+  all wifi select <id>    switch to saved network by id
+  all wifi enable <id>    enable saved network
+  all wifi disable <id>   disable saved network
+  all wifi disconnect     drop current connection
+  all wifi reassociate    reconnect to current network
+  all wifi save           persist config to disk
+EOF
             ;;
-        *)
-            printf "Password: "
-            stty -echo 2>/dev/null
-            read -r psk
-            stty echo 2>/dev/null
+        scan)
+            wpa_cli -i wlan0 scan
+            sleep 3
+            wpa_cli -i wlan0 scan_results
+            ;;
+        list)
+            wpa_cli -i wlan0 list_networks
+            ;;
+        status)
+            wpa_cli -i wlan0 status
             echo
-            iwctl --passphrase "$psk" station wlan0 connect "$1"
+            ip addr show wlan0 2>/dev/null
+            ;;
+        connect)
+            local ssid="$2" psk="$3" prio="${4:-0}" netid
+            [ -n "$ssid" ] || { echo "usage: all wifi connect <SSID> [password] [priority]" >&2; return 1; }
+            netid=$(wpa_cli -i wlan0 add_network | tail -1)
+            wpa_cli -i wlan0 set_network "$netid" ssid "\"$ssid\""
+            if [ -n "$psk" ]; then
+                wpa_cli -i wlan0 set_network "$netid" psk "\"$psk\""
+            else
+                wpa_cli -i wlan0 set_network "$netid" key_mgmt NONE
+            fi
+            wpa_cli -i wlan0 set_network "$netid" priority "$prio"
+            wpa_cli -i wlan0 enable_network "$netid"
+            wpa_cli -i wlan0 select_network "$netid"
+            wpa_cli -i wlan0 save_config
+            ;;
+        select)       wpa_cli -i wlan0 select_network "$2" ;;
+        enable)       wpa_cli -i wlan0 enable_network "$2" ;;
+        disable)      wpa_cli -i wlan0 disable_network "$2" ;;
+        disconnect)   wpa_cli -i wlan0 disconnect ;;
+        reassociate)  wpa_cli -i wlan0 reassociate ;;
+        save)         wpa_cli -i wlan0 save_config ;;
+        off)          wpa_cli -i wlan0 disconnect ;;
+        *)
+            echo "usage: all wifi scan|list|status|connect|select|enable|disable|disconnect|reassociate|save|off" >&2
+            return 1
             ;;
     esac
 }
@@ -260,7 +301,7 @@ doctor() {
     ssh_backend=$(__ssh_backend)
 
     echo "== services =="
-    for svc in dhcpcd iwd dnsmasq usb-gadget alpenglow-led alpenglow-firstboot; do
+    for svc in dhcpcd wpa_supplicant dnsmasq usb-gadget alpenglow-led; do
         if rc-service "$svc" status >/dev/null 2>&1; then
             printf "  ${P}%-20s${R} started\n" "$svc"
         elif rc-service "$svc" status 2>&1 | grep -q 'stopped'; then
@@ -269,6 +310,13 @@ doctor() {
             printf "  ${D}%-20s${R} not found\n" "$svc"
         fi
     done
+    if [ -f /var/lib/alpenglow/.firstboot-done ]; then
+        printf "  %-20s done\n" "alpenglow-firstboot"
+    elif rc-service alpenglow-firstboot status >/dev/null 2>&1; then
+        printf "  %-20s running\n" "alpenglow-firstboot"
+    else
+        printf "  %-20s pending\n" "alpenglow-firstboot"
+    fi
 
     echo
     echo "== ssh =="
@@ -294,7 +342,7 @@ doctor() {
 
     echo
     echo "== tools =="
-    for tool in iwctl gpioget gpioset duo-pinmux; do
+    for tool in wpa_cli gpioget gpioset duo-pinmux; do
         if command -v "$tool" >/dev/null 2>&1; then
             printf "  ${P}%-20s${R} ok\n" "$tool"
         else
