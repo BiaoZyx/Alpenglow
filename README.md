@@ -48,7 +48,7 @@ Replace `/dev/sdX` or `/dev/rdiskN` with your SD card device. Double-check befor
 1. Insert the SD card into the Duo S.
 2. Connect the USB-C port to your host with a **data** cable (not a charge-only cable).
 3. Power on.
-4. Wait about 30 seconds. The blue LED goes from steady to a slow blink when the system is up.
+4. Wait about 40 seconds. The blue LED goes from steady to a slow blink when the system is up.
 
 The host should see a new USB network interface:
 
@@ -76,15 +76,17 @@ Change the password immediately:
 passwd
 ```
 
-## Expand the root filesystem
+The image boots with a 768 MB rootfs and **does not auto-expand**. Expansion is a manual step (see below), so the first boot is fast and predictable. This is deliberate: online `parted` on a mounted rootfs is fragile and can stall OpenRC.
 
-The image ships with a 768 MB rootfs. Expand it to fill the SD card:
+## Expand the root filesystem
 
 ```sh
 all growfs
 ```
 
-Online resize, no reboot needed. 768 MB becomes the full card capacity.
+Online resize, no reboot needed. 768 MB becomes the full SD card capacity.
+
+`all growfs` uses `growpart` and `resize2fs` on the mounted root device. It reads the real block device, not a hardcoded `/dev/mmcblk0p3`, so it works regardless of where the image landed.
 
 ## `all` control center
 
@@ -121,6 +123,8 @@ all pkg         sync | search | add | del
 all gpio        list | func | set | get | put
 ```
 
+`all` with no arguments prints a two-level usage tree. `all wifi` alone prints the Wi-Fi subcommand help.
+
 ## Networking
 
 ### USB (default)
@@ -150,6 +154,7 @@ Saved networks persist in `/etc/wpa_supplicant/wpa_supplicant.conf`. Priority is
 - **`duo-pinmux` and `wiringX` are not packaged.** Use `libgpiod` (`gpiodetect`, `gpioinfo`, `gpioset`) for GPIO.
 - **Serial console is optional but recommended.** `ttyS0` at 115200 8N1 works out of the box. USB RNDIS + SSH is the primary access path.
 - **No firewall by default.** Alpenglow ships without nftables or iptables rules. If you expose the board to an untrusted network, add your own.
+- **`build.sh --interactive` is a placeholder.** The flag is parsed but not implemented yet; it will prompt for hostname, timezone, Wi-Fi, and zram settings in v1.1.
 
 ## Upgrading packages
 
@@ -157,30 +162,54 @@ Saved networks persist in `/etc/wpa_supplicant/wpa_supplicant.conf`. Priority is
 
 ## Build from source
 
-Prerequisites on the build host:
+### Host prerequisites
 
-- Alpine Linux or any glibc/musl host with `doas` or `sudo`
-- `apk-tools-static` in `tools/apk.static`
-- `qemu-aarch64` binfmt for cross-arch chroot (`tools/fix-binfmt.sh`)
+- Alpine Linux, or any host with `doas` or `sudo`
+- `apk-tools-static` at `tools/apk.static`
+- For cross-arch chroot on x86_64: `qemu-aarch64` and `qemu-openrc`
+- `mtools`, `dosfstools`, `e2fsprogs`, `xz`, `util-linux` (for `sfdisk`)
+
+### Pre-populate `firmware/`
+
+`build.sh` expects the following under `firmware/`, extracted from the official Milk-V image (`milkv-duos-glibc-arm64-sd_v2.0.1.img`):
+
+```
+firmware/
+├── boot/
+│   ├── fip.bin
+│   └── boot.sd
+├── aic8800/
+│   └── (7 AIC8800 firmware files)
+└── ko/
+    ├── (kernel .ko files)
+    └── 3rd/
+```
+
+These are tracked in git. Without them the image boots but has no Wi-Fi or USB gadget support.
+
+### Build
 
 ```sh
-./tools/fix-binfmt.sh
 doas rm -rf out
 ./build.sh --board duos
 ```
+
+`build.sh` calls `tools/fix-binfmt.sh` automatically when cross-arch chroot is needed, so you do not have to run it separately.
 
 Output:
 
 - `out/rootfs/` — the Alpine user space tree
 - `out/alpenglow-milkv-duos-1.0.0.img` — flashable image
-- `out/alpenglow-milkv-duos-1.0.0.img.xz` — compressed image
+- `out/alpenglow-milkv-duos-1.0.0.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
 - `out/alpenglow-milkv-duos-1.0.0.img.xz.sha256`
 
-Cross-arch tests:
+### Cross-arch tests
 
 ```sh
 ./tools/test-chroot.sh --rootfs out/rootfs --mode qemu
 ```
+
+Runs 40 assertions inside a chroot: PS1, aliases, `all` script, service files, runlevel links, config files, ext4 mounts. Hardware-dependent checks are marked SKIP.
 
 ## License
 
