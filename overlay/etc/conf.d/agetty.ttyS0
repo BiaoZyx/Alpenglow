@@ -1,0 +1,3 @@
+agetty_options="-L"
+baud="115200"
+terminal_type="vt100"

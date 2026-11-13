@@ -35,13 +35,16 @@ start() {
     sleep 0.5
     ifconfig usb0 192.168.42.1 netmask 255.255.255.0 up
 
-    rc-service dnsmasq start
+    # start dnsmasq directly, bypass openrc circular dependency
+    if ! pgrep -x dnsmasq >/dev/null 2>&1; then
+        dnsmasq --conf-file=/etc/dnsmasq.conf
+    fi
     eend $?
 }
 
 stop() {
     ebegin "Stopping USB RNDIS gadget"
-    rc-service dnsmasq stop 2>/dev/null
+    pkill -x dnsmasq 2>/dev/null || true
     ifconfig usb0 down 2>/dev/null
     [ -x /mnt/system/run_usb.sh ] && /mnt/system/run_usb.sh stop >> /var/log/usb-gadget.log 2>&1
     eend $?

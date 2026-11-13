@@ -54,16 +54,6 @@ if [ -n "$MISSING" ]; then
     exit 1
 fi
 
-# qemu for cross-arch chroot
-if [ "$ARCH" != "$(uname -m)" ]; then
-    [ -e /proc/sys/fs/binfmt_misc/qemu-${ARCH} ] || {
-        echo "error: qemu-${ARCH} binfmt not registered" >&2
-        echo "  doas apk add qemu-${ARCH} qemu-openrc" >&2
-        echo "  doas sh -c 'cat /usr/lib/binfmt.d/qemu-${ARCH}.conf > /proc/sys/fs/binfmt_misc/register'" >&2
-        exit 1
-    }
-fi
-
 # --- doas/sudo discovering ---
 if [ "$(id -u)" -eq 0 ]; then
     PRIV=""
@@ -74,6 +64,25 @@ elif command -v sudo >/dev/null 2>&1; then
 else
     echo "error: need root, sudo, or doas" >&2
     exit 1
+fi
+
+# --- setup qemu ---
+
+# fix binfmt
+if [ -e ./tools/fix-binfmt.sh ]; then
+    doas ./tools/fix-binfmt.sh
+else
+    echo "error: tools/fix-binfmt.sh not found"
+fi
+
+# qemu for cross-arch chroot
+if [ "$ARCH" != "$(uname -m)" ]; then
+    [ -e /proc/sys/fs/binfmt_misc/qemu-${ARCH} ] || {
+        echo "error: qemu-${ARCH} binfmt not registered" >&2
+        echo "  doas apk add qemu-${ARCH} qemu-openrc" >&2
+        echo "  doas sh -c 'cat /usr/lib/binfmt.d/qemu-${ARCH}.conf > /proc/sys/fs/binfmt_misc/register'" >&2
+        exit 1
+    }
 fi
 
 # --- check before ---
@@ -145,7 +154,7 @@ for s in killprocs mount-ro savecache; do
     fi
 done
 
-for s in alpenglow-firstboot alpenglow-led dhcpcd dropbear iwd local usb-gadget; do
+for s in agetty alpenglow-firstboot alpenglow-led dhcpcd dropbear iwd local usb-gadget; do
     if [ -x "$ROOTFS/etc/init.d/$s" ]; then
         $PRIV ln -sf "/etc/init.d/$s" "$ROOTFS/etc/runlevels/default/$s"
     fi
