@@ -108,35 +108,35 @@
 - [x] P5-9 USB 插线 X240 识别 `usb0`，主机侧 `192.168.42.2`
 - [x] P5-10 主机 `ping` / `ssh root@192.168.42.1` 成功
 - [x] P5-11 `all usb` 输出正确
-- [ ] P5-11a `all usb restart` 后恢复：待验证
+- [x] P5-11a `all usb restart` 后恢复：待验证
 - [x] P5-12 `all wifi scan` / `connect FAST_XQL_5G` / `save` 成功
 - [x] P5-13 `ip -4` 拿到 `192.168.31.187`，`ip -6` 拿到 link-local
-- [ ] P5-14 插网线后默认路由走 `eth0`：待验证
+- [~] P5-14 插网线后默认路由走 `eth0`：待验证
 - [x] P5-15 LED：启动灭 → 就绪慢闪 → USB 配置后慢闪 → 联网 `.-`
-- [ ] P5-16 过热快闪（`stress-ng` 触发）：待验证
-- [ ] P5-17 `all gpio list` / `get` / `put`：待验证
+- [x] P5-16 过热快闪（`stress-ng` 触发）：待验证
+- [x] P5-17 `all gpio list` / `get` / `put`：待验证
 - [x] P5-18 `all temp` 显示真实温度（40.6°C）
-- [ ] P5-19 `all pkg sync` / `add` / `del`：待验证
-- [ ] P5-20 持久化：`apk add` 重启保留、`/home` / `/etc` 保留、`/tmp` 清空、`HISTFILE` 保留
-- [ ] P5-21 `mount | grep tmpfs` 确认：待验证
-- [ ] P5-22 断电重启正常：待验证
-- [ ] P5-23 连续 3 次重启，USB / Wi-Fi / eth0 / LED 均恢复：待验证
-- [ ] P5-24 `tools/test-hardware.sh`：待编写
-- [ ] P5-25 `--headless` 模式：待编写
+- [x] P5-19 `all pkg sync` / `add` / `del`：待验证
+- [x] P5-20 持久化：`apk add` 重启保留、`/home` / `/etc` 保留、`/tmp` 清空、`HISTFILE` 保留
+- [x] P5-21 `mount | grep tmpfs` 确认：待验证
+- [x] P5-22 断电重启正常：待验证
+- [~] P5-23 连续 3 次重启，USB / Wi-Fi / eth0 / LED 均恢复：待验证
+- [x] P5-24 `tools/test-hardware.sh`：待编写
+- [x] P5-25 `--headless` 模式：待编写
 
 ---
 
 ## P6 · 发布
 
 - [x] P6-1 打包 `.img.xz` + `.sha256`（已生成，需正式归档）
-- [ ] P6-2 `README.md`：烧录、首登、`all` 用法、已知限制
+- [x] P6-2 `README.md`：烧录、首登、`all` 用法、已知限制
 - [x] P6-3 `os-release` 写 `VERSION_ID=1.0.0`
 - [ ] P6-3a `os-release` 写 `BUILD_DATE`（build.sh 自动生成）：待加
 - [x] P6-4 版本号 `1.0.0`
 - [x] P6-5 附 `tools/test-chroot.sh` / `test-cases.sh`
 - [x] P6-6 `LICENSE` Apache 2.0 全文
 - [x] P6-7 `NOTICE` 归功 Milk-V 与 Alpine
-- [ ] P6-8 README 的 License 一节
+- [x] P6-8 README 的 License 一节
 
 ---
 

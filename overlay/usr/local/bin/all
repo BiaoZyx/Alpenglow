@@ -135,7 +135,12 @@ EOF
 
 usb() {
     if [ "$1" = "restart" ]; then
+        echo "restarting usb-gadget; existing SSH sessions will drop"
         rc-service usb-gadget restart
+        sleep 3
+        ip addr show usb0 2>/dev/null | grep -q '192.168.42.1' \
+            && echo "usb0 back at 192.168.42.1" \
+            || echo "usb0 did not recover; check rc-service usb-gadget status"
         return
     fi
     local udc usb0 ssh_addr
@@ -278,7 +283,7 @@ gpio() {
             ;;
         get)
             if command -v gpioget >/dev/null 2>&1; then
-                gpioget "$2" "$3"
+                gpioget -c "$2" "$3"
             else
                 echo "gpioget not installed. Run: apk add libgpiod" >&2
                 return 1
@@ -286,7 +291,7 @@ gpio() {
             ;;
         put)
             if command -v gpioset >/dev/null 2>&1; then
-                gpioset "$2" "$3=$4"
+                gpioset -c "$2" "$3=$4"
             else
                 echo "gpioset not installed. Run: apk add libgpiod" >&2
                 return 1
