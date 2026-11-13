@@ -114,6 +114,13 @@ if [ -d overlay ]; then
         fi
     done
 fi
+
+# --- build date into os-release ---
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+$PRIV sed -i '/^BUILD_DATE=/d' "$ROOTFS/usr/lib/os-release" 2>/dev/null || true
+$PRIV sh -c "echo 'BUILD_DATE=\"$BUILD_DATE\"' >> '$ROOTFS/usr/lib/os-release'"
+
+# --- openrc-init ---
 # use openrc-init instead of busybox init (busybox on this build lacks init applet)
 $PRIV rm -f "$ROOTFS/sbin/init"
 $PRIV ln -sf /sbin/openrc-init "$ROOTFS/sbin/init"
@@ -222,7 +229,7 @@ $PRIV sfdisk -l "$IMG"
 # compress
 echo "compressing $IMG (this may take several minutes)"
 $PRIV xz -9 -T0 --block-size=64MiB -k -f "$IMG"
-$PRIV sh -c "sha256sum '$IMG.xz' > '$IMG.xz.sha256'"
+$PRIV sh -c "cd out && sha256sum '$(basename "$IMG").xz' > '$(basename "$IMG").xz.sha256'"
 
 echo "image:  $IMG"
 echo "xz:     $IMG.xz"
