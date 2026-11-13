@@ -8,7 +8,7 @@ export LC_ALL=C.UTF-8
 set -o pipefail 2>/dev/null || true
 
 export HISTFILE="$HOME/.ash_history"
-export HISTSIZE=500
+export HISTSIZE=1000
 
 __AG_P=$(printf '\033[38;5;135m')
 __AG_P2=$(printf '\033[38;5;141m')
@@ -17,6 +17,9 @@ __AG_G=$(printf '\033[38;5;171m')
 __AG_OK=$(printf '\033[38;5;120m')
 __AG_ERR=$(printf '\033[38;5;204m')
 __AG_R=$(printf '\033[0m')
+
+__AG_SYM='$'
+[ "$(id -u)" -eq 0 ] && __AG_SYM='#'
 
 __ag_fold_path() {
     local p="$PWD"
@@ -105,11 +108,11 @@ __ag_prompt() {
     user=${USER:-$(id -un 2>/dev/null || echo root)}
     path=$(__ag_fold_path)
     git=$(__ag_git)
-    printf '%s%s%s@%sall%s: %s%s%s%s$ ' \
-        "$__AG_P" "$USER" "$__AG_R" \
+    printf '%s%s%s@%sall%s:%s%s%s%s %s ' \
+        "$__AG_P" "$user" "$__AG_R" \
         "$__AG_P2" "$__AG_R" \
         "$__AG_P3" "$path" "$__AG_R" \
-        "$git"
+        "$git" "$__AG_SYM"
 }
 
 PS1='${__AG_G}[$?]${__AG_R}$(__ag_prompt)'
@@ -120,6 +123,9 @@ alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 alias ls='ls --color=auto'
+alias l='ls -lAh'
+alias ll='ls -l'
+alias la='ls -A'
 alias grep='grep --color=auto'
 alias g='git'
 alias gst='git status'
