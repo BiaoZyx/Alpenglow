@@ -49,7 +49,10 @@ __ag_fold_path() {
         elif [ $i -eq $n ]; then
             out="$out/$seg"
         else
-            out="$out/${seg%"${seg#?}"}"
+            case "$seg" in
+                .?*) out="$out/${seg%"${seg#??}"}" ;;
+                *)   out="$out/${seg%"${seg#?}"}" ;;
+            esac
         fi
     done
     [ -z "$out" ] && out="/"
