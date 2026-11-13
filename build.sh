@@ -18,7 +18,7 @@ ROOTFS="./out/rootfs"
 INTERACTIVE=0
 KEEP_CACHE=0
 ALPENGLOW_VERSION=$(grep '^VERSION_ID=' overlay/usr/lib/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
-[ -n "$ALPENGLOW_VERSION" ] || ALPENGLOW_VERSION="1.0.0"
+[ -n "$ALPENGLOW_VERSION" ] || ALPENGLOW_VERSION="1.0.1"
 
 while [ $# -gt 0 ]; do
     case "$1" in
