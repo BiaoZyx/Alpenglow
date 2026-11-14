@@ -15,13 +15,13 @@ Alpenglow keeps the official Milk-V kernel, device tree and bootloader, and repl
 
 Grab the latest release from the GitHub Releases page:
 
-- `alpenglow-milkv-duos-1.0.0.img.xz`
-- `alpenglow-milkv-duos-1.0.0.img.xz.sha256`
+- `alpenglow-milkv-duos-1.0.3.img.xz`
+- `alpenglow-milkv-duos-1.0.3.img.xz.sha256`
 
 Verify:
 
 ```sh
-sha256sum -c alpenglow-milkv-duos-1.0.0.img.xz.sha256
+sha256sum -c alpenglow-milkv-duos-1.0.3.img.xz.sha256
 ```
 
 ## Flash
@@ -29,14 +29,14 @@ sha256sum -c alpenglow-milkv-duos-1.0.0.img.xz.sha256
 Linux:
 
 ```sh
-xz -dc alpenglow-milkv-duos-1.0.0.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+xz -dc alpenglow-milkv-duos-1.0.3.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 sync
 ```
 
 macOS:
 
 ```sh
-xz -dc alpenglow-milkv-duos-1.0.0.img.xz | sudo dd of=/dev/rdiskN bs=4m
+xz -dc alpenglow-milkv-duos-1.0.3.img.xz | sudo dd of=/dev/rdiskN bs=4m
 ```
 
 Windows: use Rufus or balenaEtcher, select the `.img.xz` file directly.
@@ -120,7 +120,7 @@ all usb         USB RNDIS gadget status
   all usb restart
 
 all pkg         sync | search | add | del
-all gpio        list | func | set | get | put
+all gpio        list | func | set | get | put | wiringx
 ```
 
 `all` with no arguments prints a two-level usage tree. `all wifi` alone prints the Wi-Fi subcommand help.
@@ -147,11 +147,35 @@ Saved networks persist in `/etc/wpa_supplicant/wpa_supplicant.conf`. Priority is
 
 `eth0` is managed by `dhcpcd` with a lower metric than Wi-Fi, so a plugged cable takes over automatically.
 
+## GPIO
+
+Two tools are bundled:
+
+- `duo-pinmux` — pin mux. `duo-pinmux -p` lists pins, `-l` shows functions, `-r <pin>` reads, `-w <pin>/<func>` switches.
+- `wiringX` — C API. `libwiringx.so` in `/usr/local/lib`, `wiringx.h` in `/usr/local/include`.
+
+```c
+#include <wiringx.h>
+int main(void) {
+    wiringXSetup("milkv_duos", NULL);
+    pinMode(0, PINMODE_OUTPUT);
+    digitalWrite(0, HIGH);
+    wiringXGC();
+    return 0;
+}
+```
+
+Compile: `gcc -o test test.c -I/usr/local/include -L/usr/local/lib -lwiringx`
+Run: `LD_LIBRARY_PATH=/usr/local/lib ./test`
+
+Pin numbers are indices into `map[]` in `src/platform/milkv/duos.c` (from the milkv-duo/duo-wiringx repo), not physical pin numbers. Index 0 is XGPIOA[29], 3 is XGPIOB[20].
+
+`digitalRead` only works on pins set to `PINMODE_INPUT`. Reading an output pin returns `-1` with an error.
+
 ## Known limitations
 
 - **Wi-Fi via `iwd` is not supported.** The Buildroot 5.10 kernel does not enable the crypto user-space API (`CONFIG_CRYPTO_USER_API_HASH` and friends) that `iwd` requires. Alpenglow uses `wpa_supplicant`, which implements crypto in user space.
 - **No zram.** The kernel lacks `CONFIG_ZRAM` and `CONFIG_CRYPTO_LZ4`.
-- **`duo-pinmux` and `wiringX` are not packaged.** Use `libgpiod` (`gpiodetect`, `gpioinfo`, `gpioset`) for GPIO.
 - **Serial console is optional but recommended.** `ttyS0` at 115200 8N1 works out of the box. USB RNDIS + SSH is the primary access path.
 - **No firewall by default.** Alpenglow ships without nftables or iptables rules. If you expose the board to an untrusted network, add your own.
 - **`build.sh --interactive` is a placeholder.** The flag is parsed but not implemented yet; it will prompt for hostname, timezone, Wi-Fi, and zram settings in v1.1.
@@ -171,7 +195,7 @@ Saved networks persist in `/etc/wpa_supplicant/wpa_supplicant.conf`. Priority is
 
 ### Pre-populate `firmware/`
 
-`build.sh` expects the following under `firmware/`, extracted from the official Milk-V image (`milkv-duos-glibc-arm64-sd_v2.0.1.img`):
+`build.sh` expects the following under `firmware/`, extracted from the official Milk-V image (`milkv-duos-glibc-arm64-sd_v2.0.1.img`) and built on the board:
 
 ```
 firmware/
@@ -180,12 +204,21 @@ firmware/
 │   └── boot.sd
 ├── aic8800/
 │   └── (7 AIC8800 firmware files)
-└── ko/
-    ├── (kernel .ko files)
-    └── 3rd/
+├── ko/
+│   ├── (kernel .ko files)
+│   └── 3rd/
+├── bin/
+│   └── duo-pinmux
+└── wiringx/
+    ├── lib/
+    │   ├── libwiringx.so
+    │   └── libwiringx.a
+    └── include/
+        ├── wiringx.h
+        └── platform.h
 ```
 
-These are tracked in git. Without them the image boots but has no Wi-Fi or USB gadget support.
+These are tracked in git. Without `boot/`, `aic8800/`, `ko/` the image boots but has no Wi-Fi or USB gadget support. Without `bin/` and `wiringx/` the GPIO tooling is missing.
 
 ### Build
 
@@ -199,9 +232,9 @@ doas rm -rf out
 Output:
 
 - `out/rootfs/` — the Alpine user space tree
-- `out/alpenglow-milkv-duos-1.0.0.img` — flashable image
-- `out/alpenglow-milkv-duos-1.0.0.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
-- `out/alpenglow-milkv-duos-1.0.0.img.xz.sha256`
+- `out/alpenglow-milkv-duos-1.0.3.img` — flashable image
+- `out/alpenglow-milkv-duos-1.0.3.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
+- `out/alpenglow-milkv-duos-1.0.3.img.xz.sha256`
 
 ### Cross-arch tests
 
@@ -219,6 +252,7 @@ Upstream components retain their own licenses:
 
 - Linux kernel, U-Boot, device tree, AIC8800 firmware: from Milk-V `duo-buildroot-sdk-v2`, GPL-2.0 and vendor terms
 - Alpine Linux packages: various, see each package
+- `duo-pinmux`, `wiringX`: from milkv-duo, MPL-2.0
 
 This distribution does not alter the license status of any upstream component. See `NOTICE` for attribution.
 
