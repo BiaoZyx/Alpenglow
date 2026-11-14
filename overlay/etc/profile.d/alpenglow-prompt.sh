@@ -8,15 +8,16 @@ export LC_ALL=C.UTF-8
 set -o pipefail 2>/dev/null || true
 
 export HISTFILE="$HOME/.ash_history"
-export HISTSIZE=1000
+export HISTSIZE=2000
 
-__AG_P=$(printf '\033[38;5;135m')
-__AG_P2=$(printf '\033[38;5;141m')
-__AG_P3=$(printf '\033[38;5;99m')
-__AG_G=$(printf '\033[38;5;171m')
-__AG_OK=$(printf '\033[38;5;120m')
-__AG_ERR=$(printf '\033[38;5;204m')
-__AG_R=$(printf '\033[0m')
+__AG_HOST=${HOSTNAME:-$(hostname 2>/dev/null || echo alpenglow)}
+__AG_P=$(printf '\001\033[38;5;135m\002')
+__AG_P2=$(printf '\001\033[38;5;141m\002')
+__AG_P3=$(printf '\001\033[38;5;99m\002')
+__AG_G=$(printf '\001\033[38;5;171m\002')
+__AG_OK=$(printf '\001\033[38;5;120m\002')
+__AG_ERR=$(printf '\001\033[38;5;204m\002')
+__AG_R=$(printf '\001\033[0m\002')
 
 __AG_SYM='$'
 [ "$(id -u)" -eq 0 ] && __AG_SYM='#'
@@ -29,30 +30,28 @@ __ag_fold_path() {
     [ -z "$p" ] && { printf '/'; return; }
 
     local out="" rest="$p" seg n=0 i=0 tmp
-    tmp="$rest"
+    tmp="${rest#/}"
     while [ -n "$tmp" ]; do
         case "$tmp" in
             */*) n=$((n+1)); tmp="${tmp#*/}" ;;
             *)   n=$((n+1)); tmp="" ;;
         esac
     done
+    [ "$n" -eq 0 ] && { printf '/'; return; }
 
+    rest="${rest#/}"
     while [ -n "$rest" ]; do
         case "$rest" in
             */*) seg="${rest%%/*}"; rest="${rest#*/}" ;;
             *)   seg="$rest"; rest="" ;;
         esac
-        [ -z "$seg" ] && continue
         i=$((i+1))
         if [ "$seg" = "~" ] && [ $i -eq 1 ]; then
             out="~"
         elif [ $i -eq $n ]; then
             out="$out/$seg"
         else
-            case "$seg" in
-                .?*) out="$out/${seg%"${seg#??}"}" ;;
-                *)   out="$out/${seg%"${seg#?}"}" ;;
-            esac
+            out="$out/${seg%"${seg#?}"}"
         fi
     done
     [ -z "$out" ] && out="/"
@@ -68,7 +67,7 @@ __ag_git() {
         branch=$(git rev-parse --short HEAD 2>/dev/null) || return
     status=$(git status --porcelain=v1 --branch 2>/dev/null) || return
 
-    local ahead=0 behind=0 added=0 modified=0 deleted=0 untracked=0 line
+    local ahead=0 behind=0 added=0 staged_mod=0 unstaged_mod=0 deleted=0 untracked=0 line
     set -f
     local old_ifs="$IFS"
     IFS='
@@ -87,20 +86,29 @@ __ag_git() {
                     *'behind '*) behind="${line#*behind }"; behind="${behind%%]*}" ;;
                 esac
                 ;;
-            '?? '*)          untracked=$((untracked+1)) ;;
-            'A  '*|'AM '*)   added=$((added+1)) ;;
-            ' M '*|'MM '*|'M  '*) modified=$((modified+1)) ;;
-            'D  '*|' D '*)   deleted=$((deleted+1)) ;;
+            '?? '*)              untracked=$((untracked+1)) ;;
+            'A  '*)              added=$((added+1)) ;;
+            'AM '*)              added=$((added+1)); unstaged_mod=$((unstaged_mod+1)) ;;
+            'AD '*)              added=$((added+1)); unstaged_mod=$((unstaged_mod+1)) ;;
+            'M  '*)              staged_mod=$((staged_mod+1)) ;;
+            'MM '*)              staged_mod=$((staged_mod+1)); unstaged_mod=$((unstaged_mod+1)) ;;
+            'MD '*)              staged_mod=$((staged_mod+1)); unstaged_mod=$((unstaged_mod+1)) ;;
+            ' M '*)              unstaged_mod=$((unstaged_mod+1)) ;;
+            ' D '*)              unstaged_mod=$((unstaged_mod+1)) ;;
+            'D  '*)              deleted=$((deleted+1)) ;;
+            'DM '*)              deleted=$((deleted+1)); unstaged_mod=$((unstaged_mod+1)) ;;
+            'DD '*)              deleted=$((deleted+1)); unstaged_mod=$((unstaged_mod+1)) ;;
         esac
     done
 
     local out=""
     [ -n "$ahead" ]  && [ "$ahead" != "0" ]  && out="$out ${__AG_G}[ahead]${__AG_R}${ahead}"
     [ -n "$behind" ] && [ "$behind" != "0" ] && out="$out ${__AG_ERR}[behind]${__AG_R}${behind}"
-    [ $added -gt 0 ]     && out="$out ${__AG_OK}+${added}${__AG_R}"
-    [ $modified -gt 0 ]  && out="$out ${__AG_P2}~${modified}${__AG_R}"
-    [ $deleted -gt 0 ]   && out="$out ${__AG_ERR}-${deleted}${__AG_R}"
-    [ $untracked -gt 0 ] && out="$out ${__AG_P3}.${untracked}${__AG_R}"
+    [ $added -gt 0 ]        && out="$out ${__AG_OK}+${added}${__AG_R}"
+    [ $staged_mod -gt 0 ]   && out="$out ${__AG_P2}!${staged_mod}${__AG_R}"
+    [ $deleted -gt 0 ]      && out="$out ${__AG_ERR}-${deleted}${__AG_R}"
+    [ $unstaged_mod -gt 0 ] && out="$out ${__AG_P2}~${unstaged_mod}${__AG_R}"
+    [ $untracked -gt 0 ]    && out="$out ${__AG_P3}?${untracked}${__AG_R}"
 
     printf '(%s%s%s)' "$__AG_G" "$branch" "$__AG_R"
     printf '%s' "$out"
@@ -111,9 +119,9 @@ __ag_prompt() {
     user=${USER:-$(id -un 2>/dev/null || echo root)}
     path=$(__ag_fold_path)
     git=$(__ag_git)
-    printf '%s%s%s@%sall%s:%s%s%s%s %s ' \
+    printf '%s%s%s@%s%s%s:%s%s%s%s %s ' \
         "$__AG_P" "$user" "$__AG_R" \
-        "$__AG_P2" "$__AG_R" \
+        "$__AG_P2" "$__AG_HOST" "$__AG_R" \
         "$__AG_P3" "$path" "$__AG_R" \
         "$git" "$__AG_SYM"
 }
