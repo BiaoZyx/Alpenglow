@@ -11,13 +11,13 @@ export HISTFILE="$HOME/.ash_history"
 export HISTSIZE=2000
 
 __AG_HOST=${HOSTNAME:-$(hostname 2>/dev/null || echo alpenglow)}
-__AG_P=$(printf '\001\033[38;5;135m\002')
-__AG_P2=$(printf '\001\033[38;5;141m\002')
-__AG_P3=$(printf '\001\033[38;5;99m\002')
-__AG_G=$(printf '\001\033[38;5;171m\002')
-__AG_OK=$(printf '\001\033[38;5;120m\002')
-__AG_ERR=$(printf '\001\033[38;5;204m\002')
-__AG_R=$(printf '\001\033[0m\002')
+__AG_P=$(printf '\[\033[38;5;135m\]')
+__AG_P2=$(printf '\[\033[38;5;141m\]')
+__AG_P3=$(printf '\[\033[38;5;99m\]')
+__AG_G=$(printf '\[\033[38;5;171m\]')
+__AG_OK=$(printf '\[\033[38;5;120m\]')
+__AG_ERR=$(printf '\[\033[38;5;204m\]')
+__AG_R=$(printf '\[\033[0m\]')
 
 __AG_SYM='$'
 [ "$(id -u)" -eq 0 ] && __AG_SYM='#'
