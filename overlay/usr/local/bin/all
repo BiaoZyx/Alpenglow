@@ -1,7 +1,7 @@
 #!/bin/sh
 # Alpenglow control center
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 P=$(printf '\033[38;5;135m')
 P2=$(printf '\033[38;5;141m')
 D=$(printf '\033[2m')
@@ -40,7 +40,7 @@ usage() {
     all usb restart         restart gadget
 
   all pkg <op> ...          sync | search | add | del
-  all gpio <op> ...         list | func | set | get | put
+  all gpio <op> ...         list | func | set | get | put | wiringx
 EOF
 }
 
@@ -308,7 +308,7 @@ gpio() {
             if command -v duo-pinmux >/dev/null 2>&1; then
                 duo-pinmux -r "$2"
             else
-                echo "duo-pinmux not installed (planned for v1.1)" >&2
+                echo "duo-pinmux not installed; reinstall the Alpenglow image" >&2
                 return 1
             fi
             ;;
@@ -316,7 +316,7 @@ gpio() {
             if command -v duo-pinmux >/dev/null 2>&1; then
                 duo-pinmux -w "$2"
             else
-                echo "duo-pinmux not installed (planned for v1.1)" >&2
+                echo "duo-pinmux not installed; reinstall the Alpenglow image" >&2
                 return 1
             fi
             ;;
@@ -336,7 +336,18 @@ gpio() {
                 return 1
             fi
             ;;
-        *) echo "usage: all gpio list|func <pin>|set <pin>/<func>|get <chip> <line>|put <chip> <line> <0|1>" >&2; return 1 ;;
+        wiringx)
+            if [ -f /usr/local/include/wiringx.h ]; then
+                echo "wiringX: /usr/local/lib/libwiringx.so"
+                echo "platform: milkv_duos"
+                echo "usage: gcc -o test test.c -I/usr/local/include -L/usr/local/lib -lwiringx"
+                echo "       LD_LIBRARY_PATH=/usr/local/lib ./test"
+            else
+                echo "wiringX not installed" >&2
+                return 1
+            fi
+            ;;
+        *) echo "usage: all gpio list|func <pin>|set <pin>/<func>|get <chip> <line>|put <chip> <line> <0|1>|wiringx" >&2; return 1 ;;
     esac
 }
 
@@ -396,7 +407,7 @@ doctor() {
     if command -v duo-pinmux >/dev/null 2>&1; then
         printf "  ${P}%-20s${R} ok\n" "duo-pinmux"
     else
-        printf "  ${D}%-20s${R} ${D}(v1.1)${R}\n" "duo-pinmux"
+        printf "  ${D}%-20s${R} missing\n" "duo-pinmux"
     fi
 
     echo

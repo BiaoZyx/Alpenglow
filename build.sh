@@ -184,6 +184,22 @@ if [ -d firmware/ko ]; then
     $PRIV cp -a firmware/ko/. "$ROOTFS/mnt/system/ko/"
 fi
 
+# --- duo-pinmux ---
+if [ -d firmware/bin ]; then
+    $PRIV mkdir -p "$ROOTFS/usr/local/bin"
+    $PRIV cp firmware/bin/* "$ROOTFS/usr/local/bin/"
+    $PRIV chmod 755 "$ROOTFS/usr/local/bin/"*
+fi
+
+# --- wiringX ---
+if [ -d firmware/wiringx/lib ]; then
+    $PRIV mkdir -p "$ROOTFS/usr/local/lib" "$ROOTFS/usr/local/include"
+    $PRIV cp firmware/wiringx/lib/* "$ROOTFS/usr/local/lib/"
+    $PRIV cp firmware/wiringx/include/* "$ROOTFS/usr/local/include/"
+    $PRIV chmod 755 "$ROOTFS/usr/local/lib/libwiringx.so"
+    $PRIV chmod 644 "$ROOTFS/usr/local/lib/libwiringx.a"
+fi
+
 # --- cleanup apk cache unless --keep-cache ---
 if [ "$KEEP_CACHE" = "0" ]; then
     $PRIV rm -rf "$ROOTFS/var/cache/apk/"* 2>/dev/null || true
