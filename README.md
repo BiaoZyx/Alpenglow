@@ -78,6 +78,17 @@ passwd
 
 The image boots with a 768 MB rootfs and **does not auto-expand**. Expansion is a manual step (see below), so the first boot is fast and predictable. This is deliberate: online `parted` on a mounted rootfs is fragile and can stall OpenRC.
 
+### Timezone
+
+The image boots in UTC. To set your local timezone after the board is online:
+
+```sh
+setup-timezone
+# enter Asia/Shanghai or your zone
+```
+
+`setup-timezone` temporarily installs `tzdata`, copies the zone file to `/etc/zoneinfo/`, then removes `tzdata`. **Network is required for the first run.** After that, `/etc/zoneinfo/` is self-contained and survives reboots.
+
 ## Expand the root filesystem
 
 ```sh

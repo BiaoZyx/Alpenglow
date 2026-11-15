@@ -1,6 +1,10 @@
 #!/bin/sh
-# Register qemu-<ARCH> binfmt for cross-arch chroot on WSL or any x86_64 host.
+# Author: BiaoZyx
+# Email:  BiaoZyx@outlook.com
+# Date:   2026-11-10 18:12:34
+# Description: Register qemu-<ARCH> binfmt for cross-arch chroot on WSL or any x86_64 host.
 # Idempotent: safe to run repeatedly. Use --force to remount and re-register.
+
 set -eu
 
 ARCH="aarch64"

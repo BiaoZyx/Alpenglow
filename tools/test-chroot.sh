@@ -1,4 +1,8 @@
 #!/bin/sh
+# Author: BiaoZyx
+# Email:  BiaoZyx@outlook.com
+# Date:   2026-11-10 18:12:15
+# Description: Alpenglow chroot test runner
 set -eu
 
 ROOTFS="./out/rootfs"

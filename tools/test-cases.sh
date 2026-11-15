@@ -1,5 +1,8 @@
 #!/bin/sh
-# Alpenglow in-chroot test cases
+# Author: BiaoZyx
+# Email:  BiaoZyx@outlook.com
+# Date:   2026-11-10 18:12:08
+# Description: Alpenglow in-chroot test cases
 
 PASS=0; FAIL=0; SKIP=0
 pass() { printf "  [PASS] %s\n" "$1"; PASS=$((PASS + 1)); }

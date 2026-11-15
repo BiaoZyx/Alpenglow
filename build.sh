@@ -191,6 +191,12 @@ if [ -d firmware/bin ]; then
     $PRIV chmod 755 "$ROOTFS/usr/local/bin/"*
 fi
 
+# --- duos map table ---
+if [ -f firmware/duos-map.txt ]; then
+    $PRIV mkdir -p "$ROOTFS/usr/local/share/alpenglow"
+    $PRIV cp firmware/duos-map.txt "$ROOTFS/usr/local/share/alpenglow/"
+fi
+
 # --- wiringX ---
 if [ -d firmware/wiringx/lib ]; then
     $PRIV mkdir -p "$ROOTFS/usr/local/lib" "$ROOTFS/usr/local/include"

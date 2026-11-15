@@ -19,8 +19,11 @@ __AG_OK=$(printf '\[\033[38;5;120m\]')
 __AG_ERR=$(printf '\[\033[38;5;204m\]')
 __AG_R=$(printf '\[\033[0m\]')
 
-__AG_SYM='$'
-[ "$(id -u)" -eq 0 ] && __AG_SYM='#'
+if [ "$(id -u)" -eq 0 ]; then
+    __AG_SYM=$(printf '\[\033[1;31m\]#\[\033[0m\]')
+else
+    __AG_SYM=$(printf '\[\033[1;32m\]$\[\033[0m\]')
+fi
 
 __ag_fold_path() {
     local p="$PWD"

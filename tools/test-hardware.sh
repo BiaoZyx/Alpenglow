@@ -1,5 +1,8 @@
 #!/bin/sh
-# Alpenglow hardware/runtime test — run ON the Duo S
+# Author: BiaoZyx
+# Email:  BiaoZyx@outlook.com
+# Date:   2026-11-13 22:12:43
+# Description: Alpenglow hardware/runtime test — run ON the Duo S
 # usage: sh tools/test-hardware.sh [--headless]
 
 PASS=0; FAIL=0; SKIP=0; HEADLESS=0
@@ -44,6 +47,28 @@ temp=$(awk '{printf "%d", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev
     && pass "thermal ${temp}C" || fail "thermal" "unreadable"
 ls /mnt/system/firmware/aic8800/*.bin >/dev/null 2>&1 \
     && pass "AIC8800 firmware" || fail "AIC8800 firmware" "missing"
+
+echo "== gpio =="
+[ -x /usr/local/bin/duo-pinmux ] \
+    && pass "duo-pinmux binary" || fail "duo-pinmux binary" "missing"
+if duo-pinmux -p 2>&1 | grep -q 'A16'; then
+    n=$(duo-pinmux -p 2>&1 | grep -c '^[A-Z]')
+    [ "$n" -gt 10 ] && pass "duo-pinmux -p ($n lines)" \
+                    || fail "duo-pinmux -p" "only $n lines"
+else
+    fail "duo-pinmux -p" "no output"
+fi
+[ -f /usr/local/lib/libwiringx.so ] \
+    && pass "libwiringx.so" || fail "libwiringx.so" "missing"
+[ -f /usr/local/include/wiringx.h ] \
+    && pass "wiringx.h" || fail "wiringx.h" "missing"
+if [ -f /usr/local/share/alpenglow/duos-map.txt ]; then
+    n=$(wc -l < /usr/local/share/alpenglow/duos-map.txt)
+    [ "$n" -eq 52 ] && pass "duos-map (52 entries)" \
+                    || fail "duos-map" "$n entries, expected 52"
+else
+    fail "duos-map" "missing"
+fi
 
 echo "== time =="
 year=$(date +%Y)
