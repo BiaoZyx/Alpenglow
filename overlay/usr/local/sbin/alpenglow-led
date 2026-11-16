@@ -11,7 +11,7 @@ LED_DIR=/sys/class/gpio/gpio${LED_GPIO}
 LED_VAL=${LED_DIR}/value
 TEMP=/sys/class/thermal/thermal_zone0/temp
 USB_UDC=/tmp/usb/usb_gadget/cvitek/UDC
-HEAT_C=80000
+HEAT_C="${HEAT_C:-80000}"
 
 # fractional sleep sanity
 if ! sleep 0.01 2>/dev/null; then
@@ -19,9 +19,23 @@ if ! sleep 0.01 2>/dev/null; then
     exit 1
 fi
 
-# export GPIO and set output
-[ -d "$LED_DIR" ] || echo "$LED_GPIO" > /sys/class/gpio/export
-echo out > "$LED_DIR/direction"
+# export GPIO and set output (poll: sysfs export is asynchronous)
+if [ ! -d "$LED_DIR" ]; then
+    echo "$LED_GPIO" > /sys/class/gpio/export 2>/dev/null || true
+    i=0
+    while [ ! -d "$LED_DIR" ] && [ "$i" -lt 50 ]; do
+        sleep 0.01 2>/dev/null || sleep 1
+        i=$((i + 1))
+    done
+fi
+if [ ! -d "$LED_DIR" ]; then
+    echo "alpenglow-led: gpio $LED_GPIO export failed" >&2
+    exit 1
+fi
+echo out > "$LED_DIR/direction" 2>/dev/null || {
+    echo "alpenglow-led: cannot set direction on gpio $LED_GPIO" >&2
+    exit 1
+}
 
 on()  { echo 1 > "$LED_VAL"; }
 off() { echo 0 > "$LED_VAL"; }
@@ -56,8 +70,11 @@ pat_ready() {
 
 detect() {
     if [ -r "$TEMP" ]; then
-        t=$(cat "$TEMP")
-        [ "$t" -gt "$HEAT_C" ] && { echo heat; return; }
+        t=$(cat "$TEMP" 2>/dev/null)
+        case "$t" in
+            ''|*[!0-9]*) ;;
+            *) [ "$t" -gt "$HEAT_C" ] && { echo heat; return; } ;;
+        esac
     fi
     if [ ! -s "$USB_UDC" ]; then
         echo usb; return

@@ -51,10 +51,10 @@
 
 ## P3 · `all` 脚本与 Shell 配置
 
-- [x] P3-21 `all` 骨架：`info` / `wifi` / `usb` / `net` / `ssh` / `pkg` / `doctor` / `temp` / `backup` / `growfs` / `reboot` / `poweroff` / `version`
+- [x] P3-21 `all` 骨架：`info` / `wifi` / `usb` / `net` / `ssh` / `doctor` / `temp` / `backup` / `growfs`（`pkg` / `reboot` / `poweroff` / `version` 后于 NOTE U3/U4 删除）
 - [x] P3-21a `all backup [dir]`：带时间戳 `tar.gz`
 - [x] P3-22 `all gpio`：`list` / `func` / `set` / `get` / `put` / `wiringx`
-- [x] P3-23 `all pkg sync` / `search` / `add` / `del`
+- [x] P3-23 `all pkg sync` / `search` / `add` / `del`（后于 NOTE U3 删除，改用 `apk`）
 - [x] P3-24 `all ssh` 后端自适应：`dropbear` / `openssh` / `none`
 - [x] P3-25 `all` 优雅回退：工具缺失时英文提示 + 修复命令
 - [x] P3-26 PS1 紫色 `38;5;135`、路径折叠、git 状态实时、root `#`、冒号紧贴路径
@@ -100,7 +100,7 @@
 ## P5 · 实机验证
 
 - [x] P5-1 烧录 `.img`，串口观察 U-Boot → 内核 → Alpine
-- [x] P5-2 banner 出现，`all version` 输出正确
+- [x] P5-2 banner 出现，版本号显示正确
 - [x] P5-3 启动时间约 25 秒（U-Boot 到 SSH 可用）
 - [x] P5-4 USB SSH root 登录，密码 `alpenglow`
 - [x] P5-5 `all ssh` 显示密码登录状态与 ed25519 指纹
@@ -118,7 +118,7 @@
 - [x] P5-16 过热快闪（`HEAT_C` 阈值触发验证）
 - [x] P5-17 `all gpio list` / `get` / `put` / `func` / `set` 可用
 - [x] P5-18 `all temp` 显示真实温度（40–46°C）
-- [x] P5-19 `all pkg sync` / `add` / `del` 正常
+- [x] P5-19 包管理 `apk` 正常
 - [x] P5-20 持久化：`/home` 保留、`/tmp` 清空、`/etc` 保留、`HISTFILE` 保留
 - [x] P5-21 `mount | grep tmpfs` 确认
 - [x] P5-22 断电重启正常，Wi-Fi/NTP/USB 自动恢复

@@ -43,12 +43,24 @@ start() {
             partx -u "$DISK" 2>/dev/null
             sleep 1
             resize2fs "$ROOT_DEV" 2>/dev/null || FAIL=1
+        else
+            ewarn "cannot determine disk/partition from '$ROOT_DEV'; rootfs not expanded"
+            FAIL=1
         fi
     fi
 
     # 2. machine-id
     if [ ! -s /etc/machine-id ]; then
-        dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n' > /etc/machine-id || FAIL=1
+        MID=$(dd if=/dev/urandom bs=16 count=1 2>/dev/null | od -An -tx1 | tr -d ' \n')
+        case "$MID" in
+            ""|*[!0-9a-f]*)
+                eerror "cannot generate /etc/machine-id"
+                FAIL=1
+                ;;
+            *)
+                printf '%s\n' "$MID" > /etc/machine-id || FAIL=1
+                ;;
+        esac
     fi
 
     # 3. Dropbear ed25519 host key
@@ -60,7 +72,10 @@ start() {
 
     # 4. default root password (no serial console case)
     if ! grep -q '^root:[^:!*]' /etc/shadow 2>/dev/null; then
-        echo "root:alpenglow" | chpasswd 2>/dev/null
+        echo "root:alpenglow" | chpasswd 2>/dev/null || {
+            eerror "cannot set default root password"
+            FAIL=1
+        }
     fi
 
     # 5. 标记 + 自我禁用（仅成功时）

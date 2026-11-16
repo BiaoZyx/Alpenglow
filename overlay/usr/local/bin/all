@@ -3,20 +3,70 @@
 
 VERSION="1.1"
 P=$(printf '\033[38;5;135m')
-P2=$(printf '\033[38;5;141m')
 D=$(printf '\033[2m')
+ERRC=$(printf '\033[38;5;204m')
 R=$(printf '\033[0m')
 
 USB_UDC=/tmp/usb/usb_gadget/cvitek/UDC
 TEMP=/sys/class/thermal/thermal_zone0/temp
+
+err() { printf '%serror:%s %s\n' "$ERRC" "$R" "$*" >&2; }
+hdr() { printf '%s== %s ==%s\n' "$P" "$*" "$R"; }
+
+# confirm "Question" -> answers on a tty; non-tty proceeds (automation)
+confirm() {
+    [ -t 0 ] || return 0
+    local _c
+    printf '%s%s? %s[Y/n]%s: ' "$P" "$1" "$D" "$R"
+    if ! IFS= read -r _c; then
+        echo >&2
+        err "aborted"
+        return 1
+    fi
+    case "${_c:-Y}" in
+        [Yy]*) return 0 ;;
+        *) err "aborted"; return 1 ;;
+    esac
+}
+
+# suggest TYPED CANDIDATE... -> dim "Did you mean:" hint on stderr
+# matches: candidate contains the typed word, or both share the first 3 letters
+suggest() {
+    local _typed _c _cl _hits="" _t3 _c3 _c2 _t2
+    _typed=$(printf '%s' "$1" | tr 'A-Z' 'a-z')
+    _t3=$(printf '%.3s' "$_typed")
+    shift
+    for _c in "$@"; do
+        _cl=$(printf '%s' "$_c" | tr 'A-Z' 'a-z')
+        case "$_cl" in
+            *"$_typed"*) _hits="$_hits $_c"; continue ;;
+        esac
+        _c3=$(printf '%.3s' "$_cl")
+        if [ "$_c3" = "$_t3" ]; then
+            _hits="$_hits $_c"
+            continue
+        fi
+        # same length + same first 2 letters: catches scna -> scan
+        if [ "${#_cl}" -eq "${#_typed}" ]; then
+            _c2=$(printf '%.2s' "$_cl")
+            _t2=$(printf '%.2s' "$_typed")
+            [ "$_c2" = "$_t2" ] && _hits="$_hits $_c"
+        fi
+    done
+    [ -n "$_hits" ] || return 0
+    printf '%s  Did you mean:%s%s\n' "$D" "$R" "$_hits" >&2
+}
 
 usage() {
     printf "${P}Alpenglow %s${R} - control center\n\n" "$VERSION"
     cat <<EOF
   all info                  system overview
   all net                   interfaces, IP, routes, DNS
+  all ports                 listening TCP ports
   all ssh                   SSH address and fingerprint
-  all doctor                self-check services and tools
+  all logs [kernel|service] kernel log, or service status + log tail
+  all hostname [name]       show or set the hostname
+  all doctor                self-check services and tools (non-zero on issues)
   all temp                  thermal and CPU frequency
   all growfs                expand rootfs to fill the SD card
   all backup [dir]          back up /home and /etc
@@ -29,6 +79,7 @@ usage() {
     all wifi select <id>    switch to saved network by id
     all wifi enable <id>    enable saved network
     all wifi disable <id>   disable saved network
+    all wifi forget <id>    remove a saved network
     all wifi disconnect     drop current connection
     all wifi reassociate    reconnect to current network
     all wifi save           persist config to disk
@@ -43,6 +94,8 @@ usage() {
     all gpio get <chip> <line> read line level (libgpiod)
     all gpio put <chip> <line> <0|1>  set line level (libgpiod)
     all gpio wiringx           wiringX library location and hint
+
+  (every command accepts --help)
 EOF
 }
 
@@ -65,8 +118,8 @@ format_table() {
 
 
 iface_table() {
-    {
-        printf "IFACE\tSTATE\tIPv4\tIPv6\n"
+    local rows
+    rows=$(
         ip -o link 2>/dev/null | while IFS= read -r line; do
             iface=$(printf '%s' "$line" | awk -F': ' '{print $2}')
             case "$iface" in
@@ -78,13 +131,24 @@ iface_table() {
             esac
             v4=$(ip -4 -o addr show dev "$iface" 2>/dev/null | awk 'NR==1{print $4}')
             v6=$(ip -6 -o addr show dev "$iface" scope global 2>/dev/null | awk 'NR==1{print $4}')
-            [ -z "$v6" ] && v6=$(ip -6 -o addr show dev "$iface" 2>/dev/null | awk '$4 !~ /^::1/{print $4; exit}')
+            if [ -z "$v6" ]; then
+                v6=$(ip -6 -o addr show dev "$iface" 2>/dev/null | awk '$4 !~ /^::1/{print $4; exit}')
+                case "$v6" in
+                    fe80:*) v6="$v6 (link-local)" ;;
+                esac
+            fi
             printf "%s\t%s\t%s\t%s\n" "$iface" "$state" "${v4:--}" "${v6:--}"
         done
-    } | format_table
+    )
+    if [ -z "$rows" ]; then
+        printf '%s  No interfaces.%s\n' "$D" "$R"
+        return 0
+    fi
+    { printf "IFACE\tSTATE\tIPv4\tIPv6\n"; printf '%s\n' "$rows"; } | format_table
 }
 
 info() {
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
     local host kern up mem storage temp usb eth wifi
     host=$(hostname 2>/dev/null || echo "alpenglow")
     kern=$(uname -r 2>/dev/null || echo "n/a")
@@ -93,10 +157,17 @@ info() {
     storage=$(df -hP / 2>/dev/null | awk 'NR==2{print $3" used / "$2" total"}')
     [ -n "$storage" ] || storage="n/a"
     temp=$(awk '{printf "%.1f°C", $1/1000}' "$TEMP" 2>/dev/null || echo "n/a")
-    eth=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}' || echo "down")
+    eth=$(ip -4 -o addr show eth0 2>/dev/null | awk 'NR==1{print $4}')
     [ -n "$eth" ] || eth="down"
-    wifi=$(cat /sys/class/net/wlan0/operstate 2>/dev/null || echo "absent")
-    usb=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}')
+    wifi=$(ip -4 -o addr show wlan0 2>/dev/null | awk 'NR==1{print $4}')
+    if [ -z "$wifi" ]; then
+        if [ -e /sys/class/net/wlan0 ]; then
+            wifi=$(cat /sys/class/net/wlan0/operstate 2>/dev/null || echo "down")
+        else
+            wifi="absent"
+        fi
+    fi
+    usb=$(ip -4 -o addr show usb0 2>/dev/null | awk 'NR==1{print $4}')
     [ -n "$usb" ] || usb="down"
 
     printf "${P}Alpenglow %s${R} on %s\n" "$VERSION" "$host"
@@ -105,9 +176,41 @@ info() {
     printf "  ${D}%-8s${R} %s\n" "memory"  "$mem"
     printf "  ${D}%-8s${R} %s\n" "storage" "$storage"
     printf "  ${D}%-8s${R} %s\n" "temp"    "$temp"
-    printf "  ${D}%-8s${R} %s\n" "eth0"    "$eth"
-    printf "  ${D}%-8s${R} %s\n" "wlan0"   "$wifi"
-    printf "  ${D}%-8s${R} %s\n" "usb0"    "$usb"
+    printf "  ${D}%-8s${R} %s%s\n" "eth0"    "$eth"  "$(_nolink eth0)"
+    printf "  ${D}%-8s${R} %s%s\n" "wlan0"   "$wifi" "$(_nolink wlan0)"
+    printf "  ${D}%-8s${R} %s%s\n" "usb0"    "$usb"  "$(_nolink usb0)"
+}
+
+# _esc STRING -> backslash/quote-escape for wpa_cli quoted values
+_esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# _wait_assoc [EXPECTED_SSID] -> 0 once wpa_state=COMPLETED (ssid must match if given)
+_wait_assoc() {
+    local i st ws ss
+    i=0
+    while [ "$i" -lt 30 ]; do
+        st=$(wpa_cli -i wlan0 status 2>/dev/null)
+        ws=$(printf '%s\n' "$st" | sed -n 's/^wpa_state=//p')
+        ss=$(printf '%s\n' "$st" | sed -n 's/^ssid=//p')
+        if [ "$ws" = "COMPLETED" ]; then
+            if [ -z "${1:-}" ] || [ "$ss" = "$1" ]; then
+                return 0
+            fi
+        fi
+        sleep 0.5 2>/dev/null || sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# _nolink IFACE -> " (no link)" when the iface exists but carrier is down
+_nolink() {
+    local c
+    c=$(cat "/sys/class/net/$1/carrier" 2>/dev/null) || return 0
+    if [ "$c" = "0" ]; then
+        printf ' (no link)'
+    fi
+    return 0
 }
 
 _wpa() {
@@ -115,20 +218,39 @@ _wpa() {
     out=$(wpa_cli -i wlan0 "$@" 2>&1)
     rc=$?
     case "$out" in
-        OK|"") return $rc ;;
-        *) printf '%s\n' "$out"; return $rc ;;
+        OK)          return 0 ;;
+        FAIL)        err "$* failed"; return 1 ;;
+        "")          return "$rc" ;;
+        *)           printf '%s\n' "$out"; return "$rc" ;;
     esac
 }
 
-wifi() {
+_wpa_ready() {
+    command -v wpa_cli >/dev/null 2>&1 || return 1
+    wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state='
+}
+
+_wifi_need_suppl() {
     if ! command -v wpa_cli >/dev/null 2>&1; then
-        echo "wpa_cli not installed. Run: apk add wpa_supplicant" >&2
+        err "wpa_cli not installed"
+        printf '%s  Run:%s apk add wpa_supplicant\n' "$D" "$R" >&2
         return 1
     fi
-    case "$1" in
-        ""|help)
-            printf "${P}all wifi${R} - Wi-Fi control (wpa_supplicant)\n\n"
-            cat <<EOF
+    if ! wpa_cli -i wlan0 status 2>/dev/null | grep -q '^wpa_state='; then
+        err "wpa_supplicant not running"
+        printf '%s  Run:%s rc-service wpa_supplicant start\n' "$D" "$R" >&2
+        return 1
+    fi
+    return 0
+}
+
+_hint_save() {
+    printf '%s  Not persisted yet - Run: all wifi save%s\n' "$D" "$R"
+}
+
+wifi_help() {
+    printf "${P}all wifi${R} - Wi-Fi control (wpa_supplicant)\n\n"
+    cat <<EOF
   all wifi scan           scan networks
   all wifi list           saved networks
   all wifi status         current connection + IP
@@ -136,22 +258,60 @@ wifi() {
   all wifi select <id>    switch to saved network by id
   all wifi enable <id>    enable saved network
   all wifi disable <id>   disable saved network
+  all wifi forget <id>    remove a saved network
   all wifi disconnect     drop current connection
   all wifi reassociate    reconnect to current network
   all wifi save           persist config to disk
 EOF
+}
+
+wifi() {
+    case "${1:-}" in
+        ""|help|-h|--help)
+            wifi_help
+            return 0
             ;;
+        scan|list|status|connect|disconnect|reassociate|save)
+            ;;
+        select|enable|disable|forget)
+            case "${2:-}" in
+                ""|*[!0-9]*)
+                    err "usage: all wifi $1 <id>"
+                    return 1
+                    ;;
+            esac
+            ;;
+        *)
+            err "unknown wifi subcommand: $1"
+            suggest "$1" scan list status connect select enable disable forget disconnect reassociate save
+            wifi_help >&2
+            return 1
+            ;;
+    esac
+    _wifi_need_suppl || return 1
+    case "$1" in
         scan)
-            _wpa scan
+            _wpa scan || return 1
             sleep 3
-            wpa_cli -i wlan0 scan_results 2>/dev/null | \
-                sed '1c\BSSID\tFREQUENCY\tSIGNAL\tFLAGS\tSSID' | format_table
+            results=$(wpa_cli -i wlan0 scan_results 2>/dev/null | tail -n +2)
+            if [ -z "$results" ]; then
+                printf '%s  No scan results.%s\n' "$D" "$R"
+                return 0
+            fi
+            {
+                printf 'BSSID\tFREQUENCY\tSIGNAL\tFLAGS\tSSID\n'
+                printf '%s\n' "$results"
+            } | format_table
             ;;
         list)
+            rows=$(wpa_cli -i wlan0 list_networks 2>/dev/null | tail -n +2)
+            if [ -z "$rows" ]; then
+                printf '%s  No saved networks.%s\n' "$D" "$R"
+                return 0
+            fi
             {
                 printf "ID\tSSID\tBSSID\tFLAGS\tPRIORITY\n"
-                wpa_cli -i wlan0 list_networks 2>/dev/null | tail -n +2 | \
-                while IFS="$(printf '\t')" read -r id ssid bssid flags; do
+                printf '%s\n' "$rows" | while IFS="$(printf '\t')" read -r id ssid bssid flags; do
                     [ -n "$id" ] || continue
                     prio=$(wpa_cli -i wlan0 get_network "$id" priority 2>/dev/null | tail -1)
                     [ -n "$prio" ] || prio="-"
@@ -161,92 +321,338 @@ EOF
             } | format_table
             ;;
         status)
-            wpa_cli -i wlan0 status
+            st=$(wpa_cli -i wlan0 status 2>/dev/null)
+            wsta=$(printf '%s\n' "$st" | sed -n 's/^wpa_state=//p' | head -n 1)
+            wssid=$(printf '%s\n' "$st" | sed -n 's/^ssid=//p' | head -n 1)
+            wip=$(printf '%s\n' "$st" | sed -n 's/^ip_address=//p' | head -n 1)
+            wbssid=$(printf '%s\n' "$st" | sed -n 's/^bssid=//p' | head -n 1)
+            wfreq=$(printf '%s\n' "$st" | sed -n 's/^freq=//p' | head -n 1)
+            wsig=$(printf '%s\n' "$st" | sed -n 's/^signal=//p' | head -n 1)
+            printf "${P}Wi-Fi status${R}\n"
+            printf "  ${D}%-9s${R} %s\n" "state" "${wsta:--}"
+            printf "  ${D}%-9s${R} %s\n" "ssid" "${wssid:--}"
+            printf "  ${D}%-9s${R} %s\n" "address" "${wip:--}"
+            printf "  ${D}%-9s${R} %s\n" "bssid" "${wbssid:--}"
+            if [ -n "$wfreq" ]; then
+                printf "  ${D}%-9s${R} %s MHz\n" "freq" "$wfreq"
+            fi
+            if [ -n "$wsig" ]; then
+                printf "  ${D}%-9s${R} %s dBm\n" "signal" "$wsig"
+            fi
+            if [ "$wsta" != "COMPLETED" ]; then
+                printf '%s  Not connected - Run: all wifi scan, then all wifi connect <SSID>%s\n' "$D" "$R"
+            fi
             ;;
         connect)
-            local ssid="$2" psk="$3" prio="${4:-0}" netid
+            local ssid="${2:-}" psk="${3:-}" prio="${4:-0}" netid out
+            local dups keep old_km rebuild=0 enc rows flags nid nssid _rest
+            local _b _f _s flg sssid
             if [ -z "$ssid" ]; then
-                _wpa scan
+                [ -t 0 ] || { err "connect without SSID needs a terminal"; return 1; }
+                _wpa scan || return 1
                 sleep 3
-                wpa_cli -i wlan0 scan_results 2>/dev/null | \
-                    sed '1c\BSSID\tFREQUENCY\tSIGNAL\tFLAGS\tSSID' | format_table
+                {
+                    printf 'BSSID\tFREQUENCY\tSIGNAL\tFLAGS\tSSID\n'
+                    wpa_cli -i wlan0 scan_results 2>/dev/null | tail -n +2
+                } | format_table
                 printf "SSID: "
-                read -r ssid
-                [ -n "$ssid" ] || { echo "aborted" >&2; return 1; }
+                if ! IFS= read -r ssid; then
+                    echo >&2
+                    err "aborted"
+                    return 1
+                fi
+                [ -n "$ssid" ] || { err "aborted"; return 1; }
                 printf "Password (empty for open): "
-                stty -echo 2>/dev/null
-                read -r psk
-                stty echo 2>/dev/null
+                stty -echo 2>/dev/null || true
+                trap 'stty echo 2>/dev/null || true' INT
+                if ! IFS= read -r psk; then
+                    stty echo 2>/dev/null || true
+                    trap - INT
+                    echo >&2
+                    err "aborted"
+                    return 1
+                fi
+                stty echo 2>/dev/null || true
+                trap - INT
                 echo
+                printf "Priority [0]: "
+                if ! IFS= read -r prio; then
+                    echo >&2
+                    err "aborted"
+                    return 1
+                fi
+                prio="${prio:-0}"
             fi
-            netid=$(_wpa add_network | tail -1)
-            [ -n "$netid" ] || { echo "add_network failed" >&2; return 1; }
-            _wpa set_network "$netid" ssid "\"$ssid\"" || return 1
             if [ -n "$psk" ]; then
-                _wpa set_network "$netid" psk "\"$psk\"" || return 1
-            else
-                _wpa set_network "$netid" key_mgmt NONE || return 1
+                if [ "${#psk}" -lt 8 ] || [ "${#psk}" -gt 63 ]; then
+                    err "Wi-Fi passphrase must be 8-63 characters"
+                    return 1
+                fi
             fi
-            _wpa set_network "$netid" priority "$prio"
-            _wpa enable_network "$netid"
-            _wpa select_network "$netid"
-            _wpa save_config
+            if ! printf '%s' "$prio" | grep -Eq '^-?[0-9]+$'; then
+                err "priority must be an integer (got: $prio)"
+                return 1
+            fi
+            if [ -z "$psk" ]; then
+                rows=$(wpa_cli -i wlan0 scan_results 2>/dev/null | tail -n +2)
+                if [ -z "$rows" ]; then
+                    _wpa scan || true
+                    sleep 3
+                    rows=$(wpa_cli -i wlan0 scan_results 2>/dev/null | tail -n +2)
+                fi
+                enc=$(printf '%s\n' "$rows" | {
+                    while IFS="$(printf '\t')" read -r _b _f _s flg sssid; do
+                        [ "$sssid" = "$ssid" ] || continue
+                        case "$flg" in
+                            *WPA*|*WEP*) printf 'yes\n'; break ;;
+                        esac
+                    done
+                })
+                if [ "$enc" = "yes" ]; then
+                    err "network '$ssid' is encrypted - password required"
+                    printf '%s  Run:%s all wifi connect %s <password>\n' "$D" "$R" "$ssid" >&2
+                    return 1
+                fi
+            fi
+            # same SSID: update the first entry in place (id stays stable),
+            # drop any extra copies; rebuild only when encryption kind changes
+            dups=$(wpa_cli -i wlan0 list_networks 2>/dev/null | tail -n +2 | {
+                while IFS="$(printf '\t')" read -r nid nssid _rest; do
+                    [ "$nssid" = "$ssid" ] && printf '%s\n' "$nid"
+                done
+            })
+            keep=""
+            for nid in $dups; do
+                if [ -z "$keep" ]; then
+                    keep=$nid
+                else
+                    _wpa remove_network "$nid" || true
+                fi
+            done
+            if [ -n "$keep" ]; then
+                old_km=$(wpa_cli -i wlan0 get_network "$keep" key_mgmt 2>/dev/null | tail -n 1)
+                case "$old_km" in
+                    FAIL|"")
+                        rebuild=1
+                        ;;
+                    *NONE*)
+                        if [ -n "$psk" ]; then rebuild=1; fi
+                        ;;
+                    *)
+                        if [ -z "$psk" ]; then rebuild=1; fi
+                        ;;
+                esac
+                if [ "$rebuild" = 1 ]; then
+                    _wpa remove_network "$keep" || true
+                    keep=""
+                fi
+            fi
+            if [ -n "$keep" ]; then
+                netid=$keep
+                if [ -n "$psk" ]; then
+                    _wpa set_network "$netid" psk "\"$(_esc "$psk")\"" \
+                        || { err "set psk failed"; return 1; }
+                fi
+                _wpa set_network "$netid" priority "$prio" \
+                    || { err "set priority failed"; return 1; }
+            else
+                if ! out=$(_wpa add_network); then
+                    return 1
+                fi
+                netid=$(printf '%s' "$out" | tail -n 1)
+                case "$netid" in
+                    ""|*[!0-9]*)
+                        err "add_network returned '$netid'"
+                        return 1
+                        ;;
+                esac
+                _wpa set_network "$netid" ssid "\"$(_esc "$ssid")\"" \
+                    || { err "set ssid failed"; return 1; }
+                if [ -n "$psk" ]; then
+                    _wpa set_network "$netid" psk "\"$(_esc "$psk")\"" \
+                        || { err "set psk failed"; return 1; }
+                else
+                    _wpa set_network "$netid" key_mgmt NONE \
+                        || { err "set key_mgmt failed"; return 1; }
+                fi
+                _wpa set_network "$netid" priority "$prio" \
+                    || { err "set priority failed"; return 1; }
+            fi
+            _wpa enable_network "$netid" || return 1
+            _wpa select_network "$netid" || return 1
+            # wait for actual association before claiming success
+            if _wait_assoc "$ssid"; then
+                _wpa enable_network all || true
+                _wpa save_config || return 1
+                printf '  %sconnected%s (id %s), config saved\n' "$P" "$R" "$netid"
+            else
+                err "not connected (id $netid)"
+                flags=$(wpa_cli -i wlan0 list_networks 2>/dev/null | tail -n +2 | {
+                    while IFS="$(printf '\t')" read -r fid fsid _fb fflg _fr; do
+                        if [ "$fid" = "$netid" ]; then
+                            printf '%s\n' "$fflg"
+                            break
+                        fi
+                    done
+                })
+                case "$flags" in
+                    *TEMP-DISABLED*)
+                        printf '%s  Network is temp-disabled (likely wrong password); Run: all wifi enable %s, then retry%s\n' "$D" "$netid" "$R"
+                        ;;
+                esac
+                _wpa enable_network all || true
+                _wpa save_config || true
+                _wpa reassociate || true
+                printf '%s  Run:%s all wifi status\n' "$D" "$R" >&2
+                return 1
+            fi
             ;;
-        select)      _wpa select_network "$2" ;;
-        enable)      _wpa enable_network "$2" ;;
-        disable)     _wpa disable_network "$2" ;;
-        disconnect)  _wpa disconnect ;;
-        reassociate) _wpa reassociate ;;
-        save)        _wpa save_config ;;
-        off)         _wpa disconnect ;;
+        select)
+            local ssid2
+            ssid2=$(wpa_cli -i wlan0 list_networks 2>/dev/null | tail -n +2 | {
+                while IFS="$(printf '\t')" read -r sid sssid _r; do
+                    if [ "$sid" = "$2" ]; then
+                        printf '%s\n' "$sssid"
+                        break
+                    fi
+                done
+            })
+            _wpa select_network "$2" || return 1
+            if [ -z "$ssid2" ] || _wait_assoc "$ssid2"; then
+                _wpa enable_network all || true
+                _wpa save_config || return 1
+                printf '  %sselected%s (id %s), config saved\n' "$P" "$R" "$2"
+            else
+                err "not connected (id $2)"
+                _wpa enable_network all || true
+                _wpa save_config || true
+                _wpa reassociate || true
+                printf '%s  Run:%s all wifi status\n' "$D" "$R" >&2
+                return 1
+            fi
+            ;;
+        enable)
+            _wpa enable_network "$2" || return 1
+            _hint_save
+            ;;
+        disable)
+            _wpa disable_network "$2" || return 1
+            _hint_save
+            ;;
+        forget)
+            _wpa remove_network "$2" || { err "forget $2 failed (already removed?)"; return 1; }
+            _hint_save
+            ;;
+        disconnect)
+            local i st wsta ok=0 addr
+            _wpa disconnect || return 1
+            i=0
+            while [ "$i" -lt 10 ]; do
+                st=$(wpa_cli -i wlan0 status 2>/dev/null)
+                wsta=$(printf '%s\n' "$st" | sed -n 's/^wpa_state=//p')
+                if [ -n "$wsta" ] && [ "$wsta" != "COMPLETED" ]; then
+                    ok=1
+                    break
+                fi
+                sleep 0.5 2>/dev/null || sleep 1
+                i=$((i + 1))
+            done
+            if [ "$ok" != 1 ]; then
+                err "disconnect failed"
+                printf '%s  Run:%s all wifi status\n' "$D" "$R" >&2
+                return 1
+            fi
+            printf '  %sdisconnected%s\n' "$P" "$R"
+            addr=$(ip -4 -o addr show wlan0 2>/dev/null | awk 'NR==1{print $4}')
+            if [ -n "$addr" ]; then
+                printf '%s  wlan0 keeps %s until dhcpcd releases it%s\n' "$D" "$addr" "$R"
+            fi
+            printf '%s  Run:%s all wifi reassociate to reconnect\n' "$D" "$R"
+            ;;
+        reassociate)
+            local st as
+            _wpa reassociate || return 1
+            if _wait_assoc ""; then
+                st=$(wpa_cli -i wlan0 status 2>/dev/null)
+                as=$(printf '%s\n' "$st" | sed -n 's/^ssid=//p')
+                printf '  %sreassociated%s (ssid %s)\n' "$P" "$R" "${as:-(unknown)}"
+            else
+                err "reassociate failed"
+                printf '%s  Run:%s all wifi status\n' "$D" "$R" >&2
+                return 1
+            fi
+            ;;
+        save)
+            _wpa save_config || return 1
+            printf '  %ssaved%s config to /etc/wpa_supplicant/wpa_supplicant.conf\n' "$P" "$R"
+            ;;
+    esac
+}
+
+usb_help() {
+    printf "${P}all usb${R} - USB RNDIS gadget\n\n"
+    cat <<EOF
+  all usb                 gadget status (UDC, usb0, ssh)
+    all usb restart       restart gadget (drops this session)
+EOF
+}
+
+usb() {
+    case "${1:-}" in
+        help|-h|--help)
+            usb_help
+            return 0
+            ;;
+        ""|status)
+            local udc usb0 ssh_addr
+            if [ -s "$USB_UDC" ]; then
+                udc=$(cat "$USB_UDC")
+            else
+                udc="not configured"
+            fi
+            usb0=$(ip -4 -o addr show usb0 2>/dev/null | awk 'NR==1{print $4}')
+            [ -n "$usb0" ] || usb0="down"
+            ssh_addr=$(echo "$usb0" | cut -d/ -f1)
+
+            printf "${P}USB gadget${R}\n"
+            printf "  ${D}%-10s${R} %s\n" "UDC"  "$udc"
+            printf "  ${D}%-10s${R} %s\n" "usb0" "$usb0"
+            if [ -n "$ssh_addr" ] && [ "$ssh_addr" != "down" ]; then
+                printf "  ${D}%-10s${R} root@%s\n" "ssh" "$ssh_addr"
+            else
+                printf "  ${D}%-10s${R} ${D}%s${R}\n" "ssh" "unavailable; run 'rc-service usb-gadget start'"
+            fi
+            ;;
+        restart)
+            confirm "Restart USB gadget (SSH session will drop)" || return 1
+            echo "restarting usb-gadget; SSH session will drop"
+            rc-service usb-gadget restart || { err "usb-gadget restart failed"; return 1; }
+            sleep 3
+            ip addr show usb0 2>/dev/null | grep -q '192.168.42.1' \
+                && echo "usb0 back at 192.168.42.1" \
+                || { echo "usb0 did not recover; check rc-service usb-gadget status" >&2; return 1; }
+            ;;
         *)
-            echo "usage: all wifi scan|list|status|connect|select|enable|disable|disconnect|reassociate|save|off" >&2
+            err "unknown usb subcommand: $1"
+            suggest "$1" restart
+            usb_help >&2
             return 1
             ;;
     esac
 }
 
-usb() {
-    if [ "$1" = "restart" ]; then
-        echo "restarting usb-gadget; SSH session will drop"
-        rc-service usb-gadget restart
-        sleep 3
-        ip addr show usb0 2>/dev/null | grep -q '192.168.42.1' \
-            && echo "usb0 back at 192.168.42.1" \
-            || echo "usb0 did not recover; check rc-service usb-gadget status"
-        return
-    fi
-    local udc usb0 ssh_addr
-    if [ -s "$USB_UDC" ]; then
-        udc=$(cat "$USB_UDC")
-    else
-        udc="not configured"
-    fi
-    usb0=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' || echo "down")
-    [ -n "$usb0" ] || usb0="down"
-    ssh_addr=$(echo "$usb0" | cut -d/ -f1)
-
-    printf "${P}USB gadget${R}\n"
-    printf "  ${D}%-10s${R} %s\n" "UDC"  "$udc"
-    printf "  ${D}%-10s${R} %s\n" "usb0" "$usb0"
-    if [ -n "$ssh_addr" ] && [ "$ssh_addr" != "down" ]; then
-        printf "  ${D}%-10s${R} root@%s\n" "ssh" "$ssh_addr"
-    else
-        printf "  ${D}%-10s${R} ${D}%s${R}\n" "ssh" "unavailable; run 'rc-service usb-gadget start'"
-    fi
-}
-
 net() {
-    echo "== interfaces =="
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    hdr "interfaces"
     iface_table
     echo
-    echo "== ipv4 routes =="
+    hdr "ipv4 routes"
     ip -4 route 2>/dev/null || true
     echo
-    echo "== ipv6 routes =="
+    hdr "ipv6 routes"
     ip -6 route 2>/dev/null || true
     echo
-    echo "== resolv.conf =="
+    hdr "resolv.conf"
     cat /etc/resolv.conf 2>/dev/null || echo "n/a"
 }
 
@@ -261,15 +667,14 @@ __ssh_backend() {
 }
 
 ssh_info() {
-    local backend usb0 ssh_addr fp pw
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    local backend fp pw svcname iface ip
     backend=$(__ssh_backend)
     if [ "$backend" = "none" ]; then
-        echo "no SSH server installed. Run: apk add dropbear" >&2
+        err "no SSH server installed"
+        printf '%s  Run:%s apk add dropbear\n' "$D" "$R" >&2
         return 1
     fi
-
-    usb0=$(ip -4 -o addr show usb0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
-    [ -n "$usb0" ] || usb0="unavailable"
 
     case "$backend" in
         dropbear)
@@ -283,6 +688,7 @@ ssh_info() {
             else
                 pw="enabled"
             fi
+            svcname=dropbear
             printf "${P}SSH (Dropbear)${R}\n"
             ;;
         openssh)
@@ -296,11 +702,27 @@ ssh_info() {
             else
                 pw="disabled"
             fi
+            svcname=sshd
             printf "${P}SSH (OpenSSH)${R}\n"
             ;;
     esac
 
-    printf "  ${D}%-12s${R} root@%s\n" "address" "$usb0"
+    for iface in usb0 eth0 wlan0; do
+        ip=$(ip -4 -o addr show "$iface" 2>/dev/null | awk 'NR==1{print $4}' | cut -d/ -f1)
+        if [ -n "$ip" ]; then
+            printf "  ${D}%-12s${R} root@%s\n" "$iface" "$ip"
+        elif [ -d "/sys/class/net/$iface" ]; then
+            printf "  ${D}%-12s${R} ${D}down${R}\n" "$iface"
+        else
+            printf "  ${D}%-12s${R} ${D}absent${R}\n" "$iface"
+        fi
+    done
+    if rc-service "$svcname" status >/dev/null 2>&1; then
+        printf "  ${D}%-12s${R} %sstarted%s\n" "service" "$P" "$R"
+    else
+        printf "  ${D}%-12s${R} %sstopped%s\n" "service" "$ERRC" "$R"
+        printf "  ${D}%-12s${R} ${D}Run: rc-service %s start${R}\n" "" "$svcname"
+    fi
     printf "  ${D}%-12s${R} %s\n" "fingerprint" "$fp"
     printf "  ${D}%-12s${R} %s\n" "password" "$pw"
     if [ "$pw" = "enabled" ]; then
@@ -308,11 +730,9 @@ ssh_info() {
     fi
 }
 
-gpio() {
-    case "$1" in
-        ""|help)
-            printf "${P}all gpio${R} - GPIO control\n\n"
-            cat <<EOF
+gpio_help() {
+    printf "${P}all gpio${R} - GPIO control\n\n"
+    cat <<EOF
   all gpio list              list gpiochips and lines
   all gpio func <pin>        show pin function (duo-pinmux)
   all gpio set <pin>/<func>  switch pin function (duo-pinmux)
@@ -320,6 +740,13 @@ gpio() {
   all gpio put <chip> <line> <0|1>  set line level (libgpiod)
   all gpio wiringx           wiringX library location and hint
 EOF
+}
+
+gpio() {
+    case "${1:-}" in
+        ""|help|-h|--help)
+            gpio_help
+            return 0
             ;;
         list)
             if command -v gpiodetect >/dev/null 2>&1; then
@@ -327,39 +754,58 @@ EOF
                 echo
                 gpioinfo 2>/dev/null | head -40
             else
-                echo "gpiodetect not installed. Run: apk add libgpiod" >&2
+                err "gpiodetect not installed"
+                printf '%s  Run:%s apk add libgpiod\n' "$D" "$R" >&2
                 return 1
             fi
             ;;
         func)
+            [ -n "${2:-}" ] || { err "usage: all gpio func <pin>"; return 1; }
             if command -v duo-pinmux >/dev/null 2>&1; then
                 duo-pinmux -r "$2"
             else
-                echo "duo-pinmux not installed; reinstall the Alpenglow image" >&2
+                err "duo-pinmux not installed"
+                printf '%s  It is bundled with the Alpenglow image - reflash if missing%s\n' "$D" "$R" >&2
                 return 1
             fi
             ;;
         set)
+            case "${2:-}" in
+                */*) ;;
+                *) err "usage: all gpio set <pin>/<func>"; return 1 ;;
+            esac
             if command -v duo-pinmux >/dev/null 2>&1; then
+                confirm "Switch pin $2" || return 1
                 duo-pinmux -w "$2"
             else
-                echo "duo-pinmux not installed; reinstall the Alpenglow image" >&2
+                err "duo-pinmux not installed"
+                printf '%s  It is bundled with the Alpenglow image - reflash if missing%s\n' "$D" "$R" >&2
                 return 1
             fi
             ;;
         get)
+            [ -n "${2:-}" ] && [ -n "${3:-}" ] || { err "usage: all gpio get <chip> <line>"; return 1; }
             if command -v gpioget >/dev/null 2>&1; then
                 gpioget -c "$2" "$3"
             else
-                echo "gpioget not installed. Run: apk add libgpiod" >&2
+                err "gpioget not installed"
+                printf '%s  Run:%s apk add libgpiod\n' "$D" "$R" >&2
                 return 1
             fi
             ;;
         put)
+            [ -n "${2:-}" ] && [ -n "${3:-}" ] && [ -n "${4:-}" ] || {
+                err "usage: all gpio put <chip> <line> <0|1>"; return 1; }
+            case "$4" in
+                0|1) ;;
+                *) err "value must be 0 or 1 (got: $4)"; return 1 ;;
+            esac
             if command -v gpioset >/dev/null 2>&1; then
-                gpioset -c "$2" "$3=$4"
+                confirm "Drive $2:$3 to $4" || return 1
+                gpioset -c "$2" "$3=$4" || { err "gpioset failed"; return 1; }
             else
-                echo "gpioset not installed. Run: apk add libgpiod" >&2
+                err "gpioset not installed"
+                printf '%s  Run:%s apk add libgpiod\n' "$D" "$R" >&2
                 return 1
             fi
             ;;
@@ -376,38 +822,48 @@ EOF
                     echo "(pin map not bundled)"
                 fi
             else
-                echo "wiringX not installed" >&2
+                err "wiringX not installed"
+                printf '%s  Run:%s apk add wiringx (or reflash the image)%s\n' "$D" "$R" >&2
                 return 1
             fi
             ;;
-        *) echo "usage: all gpio list|func <pin>|set <pin>/<func>|get <chip> <line>|put <chip> <line> <0|1>|wiringx" >&2; return 1 ;;
+        *)
+            err "unknown gpio subcommand: $1"
+            suggest "$1" list func set get put wiringx
+            gpio_help >&2
+            return 1
+            ;;
     esac
 }
 
 doctor() {
-    local ssh_backend
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    local ssh_backend svc ISSUES=0 gpiod_hint=0
     ssh_backend=$(__ssh_backend)
 
-    echo "== services =="
-    for svc in dhcpcd wpa_supplicant dnsmasq usb-gadget alpenglow-led; do
+    hdr "services"
+    for svc in dhcpcd wpa_supplicant dnsmasq usb-gadget alpenglow-led alpenglow-modules local; do
         if rc-service "$svc" status >/dev/null 2>&1; then
             printf "  ${P}%-20s${R} started\n" "$svc"
         elif rc-service "$svc" status 2>&1 | grep -q 'stopped'; then
-            printf "  ${D}%-20s${R} stopped\n" "$svc"
+            printf "  ${D}%-20s${R} ${ERRC}stopped${R}\n" "$svc"
+            printf "  ${D}%-20s${R} ${D}Run: rc-service %s start${R}\n" "" "$svc"
+            ISSUES=$((ISSUES + 1))
         else
-            printf "  ${D}%-20s${R} not found\n" "$svc"
+            printf "  ${D}%-20s${R} ${ERRC}not found${R}\n" "$svc"
+            ISSUES=$((ISSUES + 1))
         fi
     done
     if [ -f /var/lib/alpenglow/.firstboot-done ]; then
-        printf "  %-20s done\n" "alpenglow-firstboot"
+        printf "  ${P}%-20s${R} done\n" "alpenglow-firstboot"
     elif rc-service alpenglow-firstboot status >/dev/null 2>&1; then
-        printf "  %-20s running\n" "alpenglow-firstboot"
+        printf "  ${P}%-20s${R} running\n" "alpenglow-firstboot"
     else
-        printf "  %-20s pending\n" "alpenglow-firstboot"
+        printf "  ${D}%-20s${R} pending\n" "alpenglow-firstboot"
     fi
 
     echo
-    echo "== ssh =="
+    hdr "ssh"
     case "$ssh_backend" in
         dropbear) printf "  ${P}%-20s${R} dropbear\n" "backend" ;;
         openssh)  printf "  ${P}%-20s${R} openssh\n" "backend" ;;
@@ -415,7 +871,7 @@ doctor() {
     esac
 
     echo
-    echo "== shell =="
+    hdr "shell"
     if [ -n "$PS1" ]; then
         printf "  ${P}%-20s${R} ok\n" "PS1"
     else
@@ -429,23 +885,37 @@ doctor() {
     printf "  ${P}%-20s${R} %s\n" "locale" "${LANG:-unset}"
 
     echo
-    echo "== tools =="
+    hdr "tools"
     for tool in wpa_cli gpioget gpioset; do
         if command -v "$tool" >/dev/null 2>&1; then
             printf "  ${P}%-20s${R} ok\n" "$tool"
         else
-            printf "  ${D}%-20s${R} missing\n" "$tool"
+            printf "  ${D}%-20s${R} ${ERRC}missing${R}\n" "$tool"
+            case "$tool" in
+                wpa_cli)
+                    printf "  ${D}%-20s${R} ${D}Run: apk add wpa_supplicant${R}\n" ""
+                    ;;
+                gpioget|gpioset)
+                    if [ "$gpiod_hint" = 0 ]; then
+                        printf "  ${D}%-20s${R} ${D}Run: apk add libgpiod${R}\n" ""
+                        gpiod_hint=1
+                    fi
+                    ;;
+            esac
+            ISSUES=$((ISSUES + 1))
         fi
     done
     if command -v duo-pinmux >/dev/null 2>&1; then
         printf "  ${P}%-20s${R} ok\n" "duo-pinmux"
     else
-        printf "  ${D}%-20s${R} missing\n" "duo-pinmux"
+        printf "  ${D}%-20s${R} ${ERRC}missing${R}\n" "duo-pinmux"
+        printf "  ${D}%-20s${R} ${D}Bundled with the image - reflash if missing${R}\n" ""
+        ISSUES=$((ISSUES + 1))
     fi
 
     echo
-    echo "== hardware =="
-    # USB gadget
+    hdr "hardware"
+    # USB gadget (cable-dependent, report only)
     if [ -s "$USB_UDC" ]; then
         printf "  ${P}%-20s${R} configured\n" "USB gadget"
     else
@@ -455,52 +925,95 @@ doctor() {
     if [ -r "$TEMP" ]; then
         printf "  ${P}%-20s${R} %s\n" "thermal" "$(awk '{printf "%.1f°C",$1/1000}' "$TEMP")"
     else
-        printf "  ${D}%-20s${R} missing\n" "thermal"
+        printf "  ${D}%-20s${R} ${ERRC}missing${R}\n" "thermal"
+        ISSUES=$((ISSUES + 1))
     fi
     # AIC8800
     if ls /lib/firmware/aic8800/*.bin >/dev/null 2>&1 || ls /mnt/system/firmware/aic8800/*.bin >/dev/null 2>&1; then
         printf "  ${P}%-20s${R} ok\n" "AIC8800 firmware"
     else
-        printf "  ${D}%-20s${R} missing\n" "AIC8800 firmware"
+        printf "  ${D}%-20s${R} ${ERRC}missing${R}\n" "AIC8800 firmware"
+        printf "  ${D}%-20s${R} ${D}Restore /lib/firmware/aic8800 or reflash${R}\n" ""
+        ISSUES=$((ISSUES + 1))
     fi
     # duos-map(text)
     if [ -f /usr/local/share/alpenglow/duos-map.txt ]; then
         printf "  ${P}%-20s${R} ok\n" "duos-map"
     else
-        printf "  ${D}%-20s${R} missing\n" "duos-map"
+        printf "  ${D}%-20s${R} ${ERRC}missing${R}\n" "duos-map"
+        printf "  ${D}%-20s${R} ${D}Bundled with the image - reflash if missing${R}\n" ""
+        ISSUES=$((ISSUES + 1))
     fi
+
+    echo
+    printf "  ${D}%-20s${R} " "issues"
+    if [ "$ISSUES" -eq 0 ]; then
+        printf "${P}none${R}\n"
+        return 0
+    fi
+    printf "${ERRC}%s${R}\n" "$ISSUES"
+    return 1
 }
 
 temp() {
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    local f
     if [ -r "$TEMP" ]; then
-        printf "  %-20s %s\n" "$(cat /sys/class/thermal/thermal_zone0/type 2>/dev/null || echo thermal_zone0)" \
+        printf "  ${D}%-12s${R} %s\n" "thermal" \
             "$(awk '{printf "%.1f°C",$1/1000}' "$TEMP")"
+        printf "  ${D}%-12s${R} %s\n" "zone" \
+            "$(cat /sys/class/thermal/thermal_zone0/type 2>/dev/null || echo thermal_zone0)"
     else
-        echo "thermal sensor not exposed by kernel" >&2
+        err "thermal sensor not exposed by kernel"
+        return 1
     fi
-    if [ -r /proc/cpuinfo ]; then
-        awk '/BogoMIPS|cpu MHz|model name/{print "  " $0}' /proc/cpuinfo 2>/dev/null | head -8
-    fi
+    f=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null)
+    case "$f" in
+        ''|*[!0-9]*) ;;
+        *) printf "  ${D}%-12s${R} %s MHz\n" "cpu freq" "$((f / 1000))" ;;
+    esac
 }
 
 backup() {
-    local dir="${1:-.}"
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    [ $# -le 1 ] || { err "usage: all backup [dir]"; return 1; }
+    local dir="${1:-.}" ts out
     if [ ! -d "$dir" ] || [ ! -w "$dir" ]; then
-        echo "cannot write to $dir" >&2
+        err "cannot write to $dir"
         return 1
     fi
-    local ts out
+    dir=$(cd "$dir" && pwd) || { err "cannot resolve $dir"; return 1; }
     ts=$(date +%Y%m%d-%H%M%S)
     out="$dir/alpenglow-$ts.tar.gz"
-    ( cd / && tar czf "$out" home etc 2>/dev/null ) || {
-        echo "backup failed" >&2
+    if ! ( cd / && tar czf "$out" home etc ); then
+        rm -f "$out" 2>/dev/null || true
+        err "backup failed"
         return 1
-    }
+    fi
     echo "$out"
 }
 
 growfs() {
-    local root_dev disk partnum
+    case "${1:-}" in
+        -h|--help) usage; return 0 ;;
+        "") ;;
+        *)
+            err "growfs takes no arguments"
+            printf 'usage: all growfs\n' >&2
+            return 1
+            ;;
+    esac
+    local root_dev disk partnum gr_out grc
+    if [ "$(id -u)" -ne 0 ]; then
+        err "growfs needs root"
+        printf '%s  Run:%s doas all growfs\n' "$D" "$R" >&2
+        return 1
+    fi
+    command -v findmnt >/dev/null 2>&1 || {
+        err "findmnt not installed"
+        printf '%s  Run:%s apk add util-linux\n' "$D" "$R" >&2
+        return 1
+    }
     root_dev=$(findmnt -n -o SOURCE /)
     if [ "$root_dev" = "/dev/root" ] || [ -z "$root_dev" ]; then
         root_dev=$(readlink -f /dev/root 2>/dev/null || echo "$root_dev")
@@ -516,35 +1029,147 @@ growfs() {
             ;;
     esac
     if [ -z "$disk" ] || [ -z "$partnum" ]; then
-        echo "cannot determine disk/partition from $root_dev" >&2
+        err "cannot determine disk/partition from $root_dev"
         return 1
     fi
+    command -v growpart >/dev/null 2>&1 || {
+        err "growpart not installed"
+        printf '%s  Run:%s apk add cloud-utils-growpart\n' "$D" "$R" >&2
+        return 1
+    }
+
+    confirm "Expand rootfs to fill the SD card" || return 1
 
     printf "${P}Growing %s (partition %s)${R}\n" "$disk" "$partnum"
     printf "  ${D}before${R}  %s\n" "$(df -h / | awk 'NR==2{print $2" total, "$4" free"}')"
 
-    if command -v growpart >/dev/null 2>&1; then
-        growpart "$disk" "$partnum" || { echo "growpart failed" >&2; return 1; }
-    else
-        echo "growpart not installed. Run: apk add cloud-utils-growpart" >&2
-        return 1
-    fi
-    resize2fs "$root_dev" || { echo "resize2fs failed" >&2; return 1; }
+    gr_out=$(growpart "$disk" "$partnum" 2>&1)
+    grc=$?
+    case "$grc" in
+        0) printf '  %s%s%s\n' "$D" "$gr_out" "$R" ;;
+        1) printf "  ${D}partition already full; running resize2fs only${R}\n" ;;
+        *)
+            err "growpart failed (rc $grc)"
+            printf '%s\n' "$gr_out" >&2
+            return 1
+            ;;
+    esac
+    resize2fs "$root_dev" || { err "resize2fs failed"; return 1; }
 
     printf "  ${D}after ${R}  %s\n" "$(df -h / | awk 'NR==2{print $2" total, "$4" free"}')"
 }
 
+ports() {
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    local raw rows
+    if command -v ss >/dev/null 2>&1; then
+        raw=$(ss -tlnp 2>/dev/null)
+    elif command -v netstat >/dev/null 2>&1; then
+        raw=$(netstat -tlnp 2>/dev/null)
+    else
+        err "neither ss nor netstat installed"
+        printf '%s  Run:%s apk add iproute2\n' "$D" "$R" >&2
+        return 1
+    fi
+    rows=$(printf '%s\n' "$raw" | awk '
+    {
+        loc = ""; proc = "-"; state = "-"
+        if ($1 ~ /^tcp/) {                       # netstat: proto st recv send local foreign state pid/name
+            loc = $4; state = $6; proc = $7
+            sub(/^[0-9]+\//, "", proc)
+        } else if ($1 == "LISTEN") {             # ss: State Recv-Q Send-Q local peer ...
+            loc = $4; state = "LISTEN"
+            if (match($0, /"[^"]+"/)) proc = substr($0, RSTART + 1, RLENGTH - 2)
+        }
+        if (loc == "") next
+        scope = "lan"
+        if (loc ~ /^\*:/ || loc ~ /^0\.0\.0\.0:/ || loc ~ /^\[::\]:/ || loc ~ /^:::/) scope = "exposed"
+        else if (loc ~ /^127\./ || loc ~ /^\[::1\]:/ || loc ~ /^::1:/) scope = "loopback"
+        n = split(loc, a, ":")
+        printf "%s\t%s\t%s\t%s\n", loc, state, (proc == "" ? "-" : proc), scope
+    }')
+    printf "${P}Listening TCP ports${R}\n"
+    if [ -z "$rows" ]; then
+        printf '%s  No TCP listeners.%s\n' "$D" "$R"
+        return 0
+    fi
+    { printf "ADDRESS\tSTATE\tPROCESS\tSCOPE\n"; printf '%s\n' "$rows"; } | format_table
+    if printf '%s\n' "$rows" | grep -q 'exposed'; then
+        printf '%s  exposed = reachable from any address (this image has no firewall)%s\n' "$D" "$R"
+    fi
+}
+
+logs() {
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    [ $# -le 1 ] || { err "usage: all logs [service|kernel]"; return 1; }
+    if [ -z "${1:-}" ] || [ "$1" = "kernel" ]; then
+        local out
+        out=$(dmesg 2>/dev/null) || {
+            err "dmesg failed"
+            [ "$(id -u)" -ne 0 ] && printf '%s  Run:%s doas all logs\n' "$D" "$R" >&2
+            return 1
+        }
+        printf "${P}Kernel log${R}\n"
+        printf '%s\n' "$out" | tail -n 100
+        return 0
+    fi
+    local svc f st_rc=0 found=0
+    svc="$1"
+    printf "${P}Log: %s${R}\n" "$svc"
+    rc-service "$svc" status 2>&1 || st_rc=$?
+    for f in /var/log/"$svc"*; do
+        [ -f "$f" ] || continue
+        found=1
+        echo
+        printf "${P}%s${R}\n" "$f"
+        tail -n 50 "$f"
+    done
+    [ "$found" = 1 ] && return 0
+    [ "$st_rc" -eq 0 ] && return 0
+    err "no status or log for: $svc"
+    return 1
+}
+
+set_hostname() {
+    case "${1:-}" in -h|--help) usage; return 0 ;; esac
+    if [ $# -eq 0 ]; then
+        cat /etc/hostname 2>/dev/null || hostname
+        return 0
+    fi
+    [ $# -eq 1 ] || { err "usage: all hostname [name]"; return 1; }
+    local name="$1"
+    printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9-]{0,62}$' || {
+        err "invalid hostname (letters, digits, '-'; must start with a letter or digit)"
+        return 1
+    }
+    if ! { printf '%s\n' "$name" > /etc/hostname; } 2>/dev/null; then
+        err "cannot write /etc/hostname"
+        printf '%s  Run:%s doas all hostname %s\n' "$D" "$R" "$name" >&2
+        return 1
+    fi
+    hostname "$name" 2>/dev/null || true
+    printf "  ${D}%-10s${R} %s\n" "hostname" "$name"
+}
+
 case "$1" in
     ""|help|-h|--help) usage ;;
-    info)     info ;;
+    info)     shift; info "$@" ;;
     wifi)     shift; wifi "$@" ;;
     usb)      shift; usb "$@" ;;
-    net)      net ;;
-    ssh)      ssh_info ;;
+    net)      shift; net "$@" ;;
+    ssh)      shift; ssh_info "$@" ;;
     gpio)     shift; gpio "$@" ;;
-    doctor)   doctor ;;
-    temp)     temp ;;
+    doctor)   shift; doctor "$@" ;;
+    temp)     shift; temp "$@" ;;
     backup)   shift; backup "$@" ;;
-    growfs)   growfs ;;
-    *) echo "unknown command: $1" >&2; usage; exit 1 ;;
+    growfs)   shift; growfs "$@" ;;
+    ports)    shift; ports "$@" ;;
+    logs)     shift; logs "$@" ;;
+    hostname) shift; set_hostname "$@" ;;
+    *)
+        err "unknown command: $1"
+        suggest "$1" info net ports ssh logs hostname doctor temp backup growfs wifi usb gpio
+        usage >&2
+        exit 1
+        ;;
 esac

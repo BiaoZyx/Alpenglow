@@ -121,13 +121,14 @@ __ag_git() {
 }
 
 __ag_prompt() {
-    local path git user
+    local path git user host
     user=${USER:-$(id -un 2>/dev/null || echo root)}
+    host=$(hostname 2>/dev/null || echo "${__AG_HOST:-alpenglow}")
     path=$(__ag_fold_path)
     git=$(__ag_git)
     printf '%s%s%s@%s%s%s:%s%s%s%s %s ' \
         "$__AG_P" "$user" "$__AG_R" \
-        "$__AG_P2" "$__AG_HOST" "$__AG_R" \
+        "$__AG_P2" "$host" "$__AG_R" \
         "$__AG_P3" "$path" "$__AG_R" \
         "$git" "$__AG_SYM"
 }
@@ -167,11 +168,16 @@ extract() {
 }
 
 backup() {
-    [ -n "$1" ] || { echo "usage: backup <target-dir>" >&2; return 1; }
+    [ -n "${1:-}" ] || { echo "usage: backup <target-dir>" >&2; return 1; }
     [ -d "$1" ] && [ -w "$1" ] || { echo "backup: cannot write to $1" >&2; return 1; }
-    local ts out
+    local dir ts out
+    dir=$(cd "$1" && pwd) || { echo "backup: cannot resolve $1" >&2; return 1; }
     ts=$(date +%Y%m%d-%H%M%S)
-    out="$1/alpenglow-$ts.tar.gz"
-    ( cd / && tar czf "$out" "${HOME#/}" etc 2>/dev/null )
+    out="$dir/alpenglow-$ts.tar.gz"
+    ( cd / && tar czf "$out" "${HOME#/}" etc ) || {
+        rm -f "$out" 2>/dev/null
+        echo "backup: tar failed" >&2
+        return 1
+    }
     echo "$out"
 }

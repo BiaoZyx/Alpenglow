@@ -112,14 +112,14 @@ Online resize, no reboot needed. 768 MB becomes the full SD card capacity.
 ```
 all info        system overview
 all net         interfaces, routes, DNS
+all ports       listening TCP ports (exposed vs loopback)
 all ssh         SSH address and fingerprint
-all doctor      service and tool self-check
+all logs        kernel log, or service status + log tail
+all hostname    show or set the hostname
+all doctor      service and tool self-check (non-zero on issues)
 all temp        thermal and CPU frequency
 all growfs      expand rootfs to fill the SD card
 all backup      back up /home and /etc
-all reboot
-all poweroff
-all version
 
 all wifi        Wi-Fi control (wpa_supplicant)
   all wifi scan
@@ -129,6 +129,7 @@ all wifi        Wi-Fi control (wpa_supplicant)
   all wifi select <id>
   all wifi enable <id>
   all wifi disable <id>
+  all wifi forget <id>
   all wifi disconnect
   all wifi reassociate
   all wifi save
@@ -136,11 +137,10 @@ all wifi        Wi-Fi control (wpa_supplicant)
 all usb         USB RNDIS gadget status
   all usb restart
 
-all pkg         sync | search | add | del
 all gpio        list | func | set | get | put | wiringx
 ```
 
-`all` with no arguments prints a two-level usage tree. `all wifi` alone prints the Wi-Fi subcommand help.
+`all` with no arguments prints a two-level usage tree. Every subcommand accepts `--help` (`all wifi` alone prints the Wi-Fi subcommand help), unknown commands print a `Did you mean:` hint and exit 1, and `all doctor` exits non-zero when it finds issues. Destructive commands (`growfs`, `usb restart`, `gpio set`/`put`) ask `Proceed? [Y/n]` on a terminal and run unattended when piped for automation.
 
 ## Networking
 
@@ -158,7 +158,7 @@ all wifi connect "MyNetwork" "MyPassword" 10
 all wifi save
 ```
 
-Saved networks persist in `/etc/wpa_supplicant/wpa_supplicant.conf`. Priority is optional; higher numbers are preferred.
+Saved networks persist in `/etc/wpa_supplicant/wpa_supplicant.conf`. Priority is optional; higher numbers are preferred. After `connect` or `select`, all saved networks are left enabled and written to disk, so a reboot or a move to a new location re-picks automatically: the highest-priority network in range wins (without this, `select_network` disables every other saved network and a reboot would only ever try the last one). `wifi disable` is therefore undone by the next `connect` — use `forget` for networks you never want joined.
 
 ### Ethernet
 
