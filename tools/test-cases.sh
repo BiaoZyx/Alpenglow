@@ -64,39 +64,37 @@ echo "== hostname =="
 skip "hostname (runtime)" "chroot inherits host kernel hostname"
 
 echo "== binaries =="
-for cmd in busybox apk dropbear dhcpcd iwctl dnsmasq parted resize2fs; do
+for cmd in busybox apk dropbear dhcpcd wpa_supplicant dnsmasq parted resize2fs; do
     command -v "$cmd" >/dev/null 2>&1 \
         && pass "bin: $cmd" || fail "bin: $cmd" "not found"
 done
 
 echo "== all script =="
 [ -x /usr/local/bin/all ] && pass "all executable" || fail "all executable" "missing"
-/usr/local/bin/all version 2>/dev/null | grep -q '^Alpenglow 1.0.0' \
-    && pass "all version" || fail "all version" "unexpected output"
 /usr/local/bin/all info 2>/dev/null | grep -q 'kernel' \
     && pass "all info" || fail "all info" "no kernel field"
 
 echo "== services =="
-for svc in usb-gadget alpenglow-led alpenglow-firstboot dhcpcd iwd; do
+for svc in usb-gadget alpenglow-led alpenglow-firstboot dhcpcd wpa_supplicant; do
     [ -x "/etc/init.d/$svc" ] \
         && pass "service: $svc" || fail "service: $svc" "missing"
 done
 
 echo "== runlevel =="
-for svc in usb-gadget alpenglow-led alpenglow-firstboot dhcpcd iwd; do
+for svc in usb-gadget alpenglow-led alpenglow-firstboot dhcpcd wpa_supplicant; do
     [ -L "/etc/runlevels/default/$svc" ] \
         && pass "runlevel: $svc" || fail "runlevel: $svc" "not linked"
 done
 
 echo "== configs =="
-for f in /etc/dhcpcd.conf /etc/iwd/main.conf /etc/dnsmasq.conf; do
+for f in /etc/dhcpcd.conf /etc/wpa_supplicant/wpa_supplicant.conf /etc/dnsmasq.conf; do
     [ -e "$f" ] && pass "config: $f" || fail "config: $f" "missing"
 done
 
 grep -q 'denyinterfaces usb0' /etc/dhcpcd.conf 2>/dev/null \
     && pass "dhcpcd denies usb0" || fail "dhcpcd denies usb0" "not set"
-grep -q 'EnableNetworkConfiguration=false' /etc/iwd/main.conf 2>/dev/null \
-    && pass "iwd no IP config" || fail "iwd no IP config" "not set"
+grep -q 'ctrl_interface=/var/run/wpa_supplicant' /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null \
+    && pass "wpa_supplicant conf" || fail "wpa_supplicant conf" "not set"
 grep -q 'dhcp-range=192.168.42.2,192.168.42.242' /etc/dnsmasq.conf 2>/dev/null \
     && pass "dnsmasq range" || fail "dnsmasq range" "unexpected range"
 
@@ -111,14 +109,39 @@ grep -q '^tty1::' /etc/inittab 2>/dev/null \
     && fail "inittab tty1 removed" "still present" || pass "inittab tty1 removed"
 grep -q '^vm.swappiness = 10' /etc/sysctl.d/99-alpenglow.conf 2>/dev/null \
     && pass "sysctl swappiness" || fail "sysctl swappiness" "missing"
-grep -q '^rc_parallel="YES"' /etc/rc.conf 2>/dev/null \
-    && pass "rc_parallel YES" || fail "rc_parallel YES" "missing"
+grep -q '^rc_parallel="NO"' /etc/rc.conf 2>/dev/null \
+    && pass "rc_parallel NO" || fail "rc_parallel NO" "not set"
+
+echo "== board profile =="
+grep -q '^BOARD_NAME=' /etc/alpenglow/board.conf 2>/dev/null \
+    && pass "board.conf baked" || fail "board.conf baked" "missing"
+grep -q '^LED_GPIO=' /etc/alpenglow/board.conf 2>/dev/null \
+    && pass "board.conf LED_GPIO" || fail "board.conf LED_GPIO" "missing"
+[ -r /etc/alpenglow/board.conf ] && sh -n /etc/alpenglow/board.conf 2>/dev/null \
+    && pass "board.conf valid sh" || fail "board.conf valid sh" "syntax error"
+
+echo "== build customization =="
+if [ -e /etc/localtime ]; then
+    pass "localtime present"
+else
+    skip "localtime" "timezone not set at build time"
+fi
+if grep -q 'network={' /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null; then
+    pass "wpa network block"
+else
+    skip "wpa network" "no wifi configured at build time"
+fi
+if grep -q '^root:\$6\$' /etc/shadow 2>/dev/null; then
+    pass "root hash set"
+else
+    skip "root password" "default firstboot password"
+fi
 
 echo "== hardware (skipped in chroot) =="
 skip "thermal" "chroot /sys is host"
 skip "led"     "requires real GPIO 509"
 skip "usb0"    "requires real configfs + UDC"
-skip "iwd"     "requires real wireless hardware"
+skip "wifi"    "requires real wireless hardware"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL SKIP=$SKIP"

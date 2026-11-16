@@ -11,3 +11,6 @@ out/
 # note: firmware/boot/, firmware/aic8800/, firmware/ko/ are tracked
 # they are build inputs, extracted from official v2.0.1 image
 dist/
+
+# editor/tool backups
+*.bak

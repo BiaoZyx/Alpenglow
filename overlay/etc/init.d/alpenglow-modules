@@ -3,7 +3,7 @@ description="Alpenglow kernel module loader (cv181x base + aic8800)"
 
 depend() {
     need localmount
-    before iwd
+    before wpa_supplicant
     before usb-gadget
 }
 

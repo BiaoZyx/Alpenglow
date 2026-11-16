@@ -110,9 +110,9 @@
 | [x] |  7  | **U3** | `all pkg` 的 `search`/`add`/`del` 冗余 | `all` 的 `pkg()` 和 `usage()`                      | 全部删除                                                                                   |
 | [x] |  8  | **U4** | `all reboot`/`all poweroff` 无意义     | `all` 的 `case` 和 `usage()`                       | 删两个子命令和 usage 行                                                                    |
 | [x] |  9  | **U6** | `all wifi connect` 交互模式未实现      | `all` 的 `wifi connect)`                           | 无参数时扫描 + 读 SSID/密码，`stty -echo` 读密码                                           |
-| [ ] |  10 | **P1** | `all gpio wiringx` 输出 `map[]` 索引表 | `all` 的 `gpio wiringx)` + `firmware/duos-map.txt` | 从 `duos.c` 提取 `map[]` 到 `/usr/local/share/alpenglow/duos-map.txt`，`gpio wiringx` 读它 |
-| [ ] |  11 | **P2** | `test-hardware.sh` 加 GPIO 自动化      | `tools/test-hardware.sh`                           | 加 `duo-pinmux -p`、`wiringXSetup`、`pinMode`/`digitalWrite`                               |
-| [ ] |  12 | **P3** | README 补时区说明                      | `README.md`                                        | First boot 后加 `setup-timezone` 段落，说明首次需网络                                      |
-| [ ] |  13 | **P4** | 版本升 1.0.4                           | `os-release`、`all` 的 `VERSION`                   | `VERSION_ID=1.0.4`、`VERSION="1.0.4"`                                                      |
-| [ ] |  14 | **P5** | 构建、`dist/`、tag、push、Release      | —                                                  | `build.sh` → `sha256` → `dist/` → `git tag v1.0.4` → push → 网页 Release                   |
+| [x] |  10 | **P1** | `all gpio wiringx` 输出 `map[]` 索引表 | `all` 的 `gpio wiringx)` + `firmware/duos-map.txt` | 从 `duos.c` 提取 `map[]` 到 `/usr/local/share/alpenglow/duos-map.txt`，`gpio wiringx` 读它 |
+| [x] |  11 | **P2** | `test-hardware.sh` 加 GPIO 自动化      | `tools/test-hardware.sh`                           | 加 `duo-pinmux -p`、`wiringXSetup`、`pinMode`/`digitalWrite`                               |
+| [x] |  12 | **P3** | README 补时区说明                      | `README.md`                                        | First boot 后加 `setup-timezone` 段落，说明首次需网络                                      |
+| [x] |  13 | **P4** | 版本升 1.0.4                           | `os-release`、`all` 的 `VERSION`                   | `VERSION_ID=1.0.4`、`VERSION="1.0.4"`                                                      |
+| [~] |  14 | **P5** | 构建、`dist/`、tag、push、Release      | —                                                  | `build.sh` → `sha256` → `dist/` → `git tag v1.0.4` → push → 网页 Release（tag/dist/push 已完成，网页 Release 待确认）
 

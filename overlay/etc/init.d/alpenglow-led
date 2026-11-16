@@ -3,7 +3,7 @@ description="Alpenglow LED status daemon"
 
 depend() {
     need localmount
-    after usb-gadget dhcpcd iwd
+    after usb-gadget dhcpcd wpa_supplicant
 }
 
 start() {

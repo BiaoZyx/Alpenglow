@@ -3,8 +3,8 @@
 > Target: Buildroot 5.10 kernel + Alpine aarch64 (musl) user space
 > Platform: Milk-V Duo S (SG2000, ARM Cortex-A53)
 > License: Apache 2.0 (original parts)
-> Version: 1.0.3
-> Published: v1.0.0, v1.0.1, v1.0.2, v1.0.3
+> Version: 1.1
+> Published: v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4, v1.1
 
 ---
 
@@ -23,7 +23,7 @@
 
 - [x] P1-7 仓库结构：`Alpenglow/` + `build.sh` / `config/` / `overlay/` / `firmware/` / `tools/` / `LICENSE` / `NOTICE`
 - [x] P1-8 `apk.static --root --arch aarch64 --initdb add` 流程跑通
-- [ ] P1-8a `build.sh --interactive`：v1.1
+- [x] P1-8a `build.sh --interactive`：v1.1
 - [x] P1-8b 非交互模式使用默认值
 - [x] P1-8c 复制 `LICENSE` / `NOTICE` 到 `/usr/share/doc/alpenglow/`
 - [x] P1-9 `world` 定稿：`alpine-base agetty cloud-utils-growpart dhcpcd dnsmasq dropbear e2fsprogs-extra libgpiod openrc-init parted util-linux wpa_supplicant`
@@ -84,7 +84,6 @@
 ## P4 · 构建前优化
 
 - [x] P4-31 `/etc/profile` 精简：`HISTFILE`、`PS1`、`set -o pipefail`
-- [ ] P4-32 BusyBox applet 裁剪：v1.1
 - [x] P4-33 locale `C.UTF-8` 生效
 - [x] P4-34 tmpfs：`/tmp` 64M、`/var/log` 16M
 - [x] P4-35 挂载：rootfs `noatime`、boot `ro`
@@ -163,13 +162,12 @@
 
 ## v1.1 推迟项
 
-- [ ] BusyBox applet 裁剪（需重编 busybox）
-- [ ] `build.sh --interactive`（hostname / timezone / Wi-Fi / 交互）
-- [ ] board profile 抽象（多板子支持）
-- [ ] P5-14 eth0 路由验证（需网线环境）
-- [ ] P5-23 连续 3 次重启（需网线环境）
-- [ ] `all gpio wiringx` 输出完整 `map[]` 索引表（从 `duos.c` 提取到 `/usr/local/share/alpenglow/`）
-- [ ] `tools/test-hardware.sh` 加 GPIO 自动化测试（`duo-pinmux -p`、`wiringXSetup`）
+- [x] `build.sh --interactive`（hostname / timezone / Wi-Fi / root 密码）
+- [x] board profile 抽象（多板子支持）
+- [x] `build.sh` 加固与体验（缺值报错、rootfs 安全校验、preflight 前移、确认门、密码二次输入、时区 `Did you mean`、`--list-boards` / `--dry-run` / `--clean-old`、耗时统计、Ctrl-C trap、env 密码）
+- [x] `all gpio wiringx` 输出完整 `map[]` 索引表（从 `duos.c` 提取到 `/usr/local/share/alpenglow/`）
+- [x] `tools/test-hardware.sh` 加 GPIO 自动化测试（`duo-pinmux -p`、`wiringXSetup`）
+- [~] P5-14 / P5-23 需网线环境，见上方 P5 清单（SKIP）
 
 ---
 
@@ -187,12 +185,12 @@
 | 阶段 | 完成 | 总数 |
 |---|---|---|
 | P0 | 6 | 6 |
-| P1 | 9 | 10 |
+| P1 | 10 | 10 |
 | P2 | 9 | 9 |
 | P3 | 19 | 19 |
-| P4 | 11 | 12 |
+| P4 | 11 | 11 |
 | P5 | 25 | 27 |
 | P6 | 8 | 8 |
-| **总计** | **87** | **91** |
+| **总计** | **88** | **90** |
 
-**v1.0 系列完成度：95.6%**（P1-8a `--interactive` 和 P4-32 BusyBox 裁剪是唯一未完成的非 SKIP 项，都推迟到 v1.1）
+**v1.0 系列完成度：97.8%**（P1-8a `--interactive` 已在 v1.1 实现；P4-32 BusyBox 裁剪已从清单移除）

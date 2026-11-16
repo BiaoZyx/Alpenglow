@@ -2,7 +2,11 @@
 # Alpenglow LED status daemon
 # GPIO 509 (sysfs), priority: heat > usb > online > ready
 
-LED_GPIO=509
+# board profile overrides (baked by build.sh)
+if [ -r /etc/alpenglow/board.conf ]; then
+    . /etc/alpenglow/board.conf
+fi
+LED_GPIO="${LED_GPIO:-509}"
 LED_DIR=/sys/class/gpio/gpio${LED_GPIO}
 LED_VAL=${LED_DIR}/value
 TEMP=/sys/class/thermal/thermal_zone0/temp

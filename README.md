@@ -15,13 +15,13 @@ Alpenglow keeps the official Milk-V kernel, device tree and bootloader, and repl
 
 Grab the latest release from the GitHub Releases page:
 
-- `alpenglow-milkv-duos-1.0.3.img.xz`
-- `alpenglow-milkv-duos-1.0.3.img.xz.sha256`
+- `alpenglow-milkv-duos-1.1.img.xz`
+- `alpenglow-milkv-duos-1.1.img.xz.sha256`
 
 Verify:
 
 ```sh
-sha256sum -c alpenglow-milkv-duos-1.0.3.img.xz.sha256
+sha256sum -c alpenglow-milkv-duos-1.1.img.xz.sha256
 ```
 
 ## Flash
@@ -29,14 +29,14 @@ sha256sum -c alpenglow-milkv-duos-1.0.3.img.xz.sha256
 Linux:
 
 ```sh
-xz -dc alpenglow-milkv-duos-1.0.3.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+xz -dc alpenglow-milkv-duos-1.1.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 sync
 ```
 
 macOS:
 
 ```sh
-xz -dc alpenglow-milkv-duos-1.0.3.img.xz | sudo dd of=/dev/rdiskN bs=4m
+xz -dc alpenglow-milkv-duos-1.1.img.xz | sudo dd of=/dev/rdiskN bs=4m
 ```
 
 Windows: use Rufus or balenaEtcher, select the `.img.xz` file directly.
@@ -88,6 +88,12 @@ setup-timezone
 ```
 
 `setup-timezone` temporarily installs `tzdata`, copies the zone file to `/etc/zoneinfo/`, then removes `tzdata`. **Network is required for the first run.** After that, `/etc/zoneinfo/` is self-contained and survives reboots.
+
+You can also bake the timezone in at build time — no network needed on the board:
+
+```sh
+./build.sh --timezone Asia/Shanghai
+```
 
 ## Expand the root filesystem
 
@@ -189,7 +195,6 @@ Pin numbers are indices into `map[]` in `src/platform/milkv/duos.c` (from the mi
 - **No zram.** The kernel lacks `CONFIG_ZRAM` and `CONFIG_CRYPTO_LZ4`.
 - **Serial console is optional but recommended.** `ttyS0` at 115200 8N1 works out of the box. USB RNDIS + SSH is the primary access path.
 - **No firewall by default.** Alpenglow ships without nftables or iptables rules. If you expose the board to an untrusted network, add your own.
-- **`build.sh --interactive` is a placeholder.** The flag is parsed but not implemented yet; it will prompt for hostname, timezone, Wi-Fi, and zram settings in v1.1.
 
 ## Upgrading packages
 
@@ -231,6 +236,16 @@ firmware/
 
 These are tracked in git. Without `boot/`, `aic8800/`, `ko/` the image boots but has no Wi-Fi or USB gadget support. Without `bin/` and `wiringx/` the GPIO tooling is missing.
 
+### Board profiles
+
+Boards live in `config/boards/<name>.conf` and are selected with `--board` (default `duos`; with `--interactive` the board is the first prompt, and `--board` skips it; `--list-boards` prints them and exits). The profile is validated at build start: an unknown `--board` lists the available profiles, and a missing or invalid variable fails immediately with its name instead of a cryptic error deep in the build.
+
+`config/boards/TEMPLATE.conf` documents every variable — copy it to add a board:
+
+- **required** — `BOARD_NAME`, `ARCH`, partition sizes and LBAs (`BOOT_SIZE_MB`, `LOGO_SIZE_MB`, `ROOTFS_SIZE_MB`, `BOOT_LBA`, `LOGO_LBA`, `ROOTFS_LBA`); they must match the board's official partition layout
+- **optional** — `SERIAL_CONSOLE` / `SERIAL_BAUD` rewrite the inittab getty line; `FW_*` points at the host-side firmware sources (`firmware/boot`, `firmware/aic8800`, `firmware/ko`, `firmware/bin`, `firmware/duos-map.txt`, `firmware/wiringx`); missing ones are skipped
+- **runtime** — everything else is baked verbatim into `/etc/alpenglow/board.conf` on the device, where `alpenglow-led` reads `LED_GPIO` (and any future on-device tooling can read the rest)
+
 ### Build
 
 ```sh
@@ -240,12 +255,39 @@ doas rm -rf out
 
 `build.sh` calls `tools/fix-binfmt.sh` automatically when cross-arch chroot is needed, so you do not have to run it separately.
 
+#### Customizing the image
+
+```sh
+./build.sh --interactive
+# or non-interactive, e.g. for scripts:
+./build.sh --hostname myboard --timezone Asia/Shanghai \
+    --wifi-ssid MyNetwork --wifi-pass secret123 --root-pass secret99
+```
+
+| flag | effect |
+|---|---|
+| `--interactive` | prompt for board, hostname, timezone, Wi-Fi, root password (requires a terminal; flags already given skip their prompt) |
+| `--hostname NAME` | writes `/etc/hostname` (default `alpenglow`) |
+| `--timezone ZONE` | copies zone data from the host's `/usr/share/zoneinfo/` and links `/etc/localtime` (default: UTC) |
+| `--wifi-ssid SSID` | appends a `network={}` block to `/etc/wpa_supplicant/wpa_supplicant.conf` |
+| `--wifi-pass PASS` | WPA passphrase, 8–63 chars; omit for an open network (requires `--wifi-ssid`) |
+| `--root-pass PASS` | sha-512 hash written to `/etc/shadow`; firstboot keeps it instead of resetting to `alpenglow` (needs `openssl`) |
+| `--list-boards` | list available board profiles (`NAME  description (arch)`) and exit |
+| `--dry-run` | print the build plan (layout, firmware sources, customizations, host checks) and exit without touching anything; not combinable with `--interactive` |
+| `--clean-old` | after a successful build, remove other versions' images from `out/` |
+
+Without these flags the build stays fully non-interactive and uses the defaults. Prompts show their choices up front (available boards before `Board`, common timezones before `Timezone`, `Did you mean:` suggestions on a bad timezone), Enter accepts the `[default]`, and the output uses the same purple palette as `all`.
+
+Interactive mode is guarded: host tools, boot files, and `openssl` are checked **before** any prompt; passwords are entered twice (mismatch retries); and a final `Proceed with build? [Y/n]` runs before anything destructive happens. Ctrl-C prints `Interrupted — out/ may contain partial files` instead of dying silently. Passwords can also be supplied via `ALPENGLOW_ROOT_PASS` / `ALPENGLOW_WIFI_PASS` when the flag is omitted (useful for scripts — keeps them out of `ps`). Every build ends with a `took:` line; if older images sit in `out/`, rerun with `--clean-old`.
+
+`--rootfs` refuses dangerous paths (`/`, `.`, `$HOME`, paths with `..`, system directories) because the directory is removed before the build.
+
 Output:
 
 - `out/rootfs/` — the Alpine user space tree
-- `out/alpenglow-milkv-duos-1.0.3.img` — flashable image
-- `out/alpenglow-milkv-duos-1.0.3.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
-- `out/alpenglow-milkv-duos-1.0.3.img.xz.sha256`
+- `out/alpenglow-milkv-duos-1.1.img` — flashable image
+- `out/alpenglow-milkv-duos-1.1.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
+- `out/alpenglow-milkv-duos-1.1.img.xz.sha256`
 
 ### Cross-arch tests
 
@@ -253,7 +295,7 @@ Output:
 ./tools/test-chroot.sh --rootfs out/rootfs --mode qemu
 ```
 
-Runs 40 assertions inside a chroot: PS1, aliases, `all` script, service files, runlevel links, config files, ext4 mounts. Hardware-dependent checks are marked SKIP.
+Runs `tools/test-cases.sh` inside a chroot: PS1, aliases, `all` script, service files, runlevel links, config files, board profile, build customizations (timezone/Wi-Fi/root password — skipped when not configured at build time), ext4 mounts. Hardware-dependent checks are marked SKIP.
 
 ## License
 
