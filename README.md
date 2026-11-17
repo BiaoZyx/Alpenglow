@@ -15,13 +15,13 @@ Alpenglow keeps the official Milk-V kernel, device tree and bootloader, and repl
 
 Grab the latest release from the GitHub Releases page:
 
-- `alpenglow-milkv-duos-1.1.img.xz`
-- `alpenglow-milkv-duos-1.1.img.xz.sha256`
+- `alpenglow-milkv-duos-1.1.1.img.xz`
+- `alpenglow-milkv-duos-1.1.1.img.xz.sha256`
 
 Verify:
 
 ```sh
-sha256sum -c alpenglow-milkv-duos-1.1.img.xz.sha256
+sha256sum -c alpenglow-milkv-duos-1.1.1.img.xz.sha256
 ```
 
 ## Flash
@@ -29,14 +29,14 @@ sha256sum -c alpenglow-milkv-duos-1.1.img.xz.sha256
 Linux:
 
 ```sh
-xz -dc alpenglow-milkv-duos-1.1.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
+xz -dc alpenglow-milkv-duos-1.1.1.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 sync
 ```
 
 macOS:
 
 ```sh
-xz -dc alpenglow-milkv-duos-1.1.img.xz | sudo dd of=/dev/rdiskN bs=4m
+xz -dc alpenglow-milkv-duos-1.1.1.img.xz | sudo dd of=/dev/rdiskN bs=4m
 ```
 
 Windows: use Rufus or balenaEtcher, select the `.img.xz` file directly.
@@ -140,7 +140,7 @@ all usb         USB RNDIS gadget status
 all gpio        list | func | set | get | put | wiringx
 ```
 
-`all` with no arguments prints a two-level usage tree. Every subcommand accepts `--help` (`all wifi` alone prints the Wi-Fi subcommand help), unknown commands print a `Did you mean:` hint and exit 1, and `all doctor` exits non-zero when it finds issues. Destructive commands (`growfs`, `usb restart`, `gpio set`/`put`) ask `Proceed? [Y/n]` on a terminal and run unattended when piped for automation.
+`all` with no arguments prints a two-level usage tree. Every subcommand accepts `--help` (`all wifi` alone prints the Wi-Fi subcommand help), unknown commands print a `Did you mean:` hint and exit 1, and `all doctor` exits non-zero when it finds issues. Destructive commands (`growfs`, `usb restart`, `gpio set`/`put`) ask `Proceed? [Y/n]` on a terminal and run unattended when piped for automation. Privileged commands (`wifi`, `growfs`) check the uid first and fail with `<x> needs root` plus a `Run: doas ...` hint when run as a normal user, instead of a misleading downstream error (without this, `wpa_cli` cannot reach the control socket and `wifi` would claim `wpa_supplicant not running`).
 
 ## Networking
 
@@ -285,9 +285,9 @@ Interactive mode is guarded: host tools, boot files, and `openssl` are checked *
 Output:
 
 - `out/rootfs/` — the Alpine user space tree
-- `out/alpenglow-milkv-duos-1.1.img` — flashable image
-- `out/alpenglow-milkv-duos-1.1.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
-- `out/alpenglow-milkv-duos-1.1.img.xz.sha256`
+- `out/alpenglow-milkv-duos-1.1.1.img` — flashable image
+- `out/alpenglow-milkv-duos-1.1.1.img.xz` — compressed image (xz, 64 MiB block size, multi-threaded)
+- `out/alpenglow-milkv-duos-1.1.1.img.xz.sha256`
 
 ### Cross-arch tests
 

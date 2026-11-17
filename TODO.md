@@ -3,8 +3,8 @@
 > Target: Buildroot 5.10 kernel + Alpine aarch64 (musl) user space
 > Platform: Milk-V Duo S (SG2000, ARM Cortex-A53)
 > License: Apache 2.0 (original parts)
-> Version: 1.1
-> Published: v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4, v1.1
+> Version: 1.1.1
+> Published: v1.0.0, v1.0.1, v1.0.2, v1.0.3, v1.0.4, v1.1, v1.1.1
 
 ---
 

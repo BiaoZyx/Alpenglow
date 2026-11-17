@@ -13,9 +13,9 @@ hdr() { printf '%s== %s ==%s\n' "$P" "$*" "$R"; }
 usage() {
     printf '%susage:%s %s [options]\n\n' "$P" "$R" "$0"
     cat <<EOF
-  --board NAME        board profile in config/boards/ (default: duos, prompted with --interactive)
+  --board NAME        board profile in config/boards/ (prompted with --interactive or no arguments; else default: duos)
   --rootfs DIR        output rootfs directory (default: ./out/rootfs)
-  --interactive       prompt for hostname/timezone/wifi/root-password
+  --interactive       prompt for board/hostname/timezone/wifi/root-password (default with no arguments)
   --hostname NAME     set /etc/hostname (default: alpenglow)
   --timezone ZONE     set timezone from host /usr/share/zoneinfo/ (default: UTC)
   --wifi-ssid SSID    preconfigure wpa_supplicant network (open if no password)
@@ -32,7 +32,7 @@ ALPENGLOW_ROOT_PASS / ALPENGLOW_WIFI_PASS
 EOF
 }
 
-BOARD=""                    # empty = default duos (or prompted with --interactive)
+BOARD=""                    # empty = default duos (prompted with --interactive or no arguments)
 ROOTFS="./out/rootfs"
 INTERACTIVE=0
 KEEP_CACHE=0
@@ -45,7 +45,18 @@ OPT_WIFI_SSID=""
 OPT_WIFI_PASS=""
 OPT_ROOT_PASS=""
 ALPENGLOW_VERSION=$(grep '^VERSION_ID=' overlay/usr/lib/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
-[ -n "$ALPENGLOW_VERSION" ] || ALPENGLOW_VERSION="1.1"
+[ -n "$ALPENGLOW_VERSION" ] || ALPENGLOW_VERSION="1.1.1"
+
+# --- bare invocation: no silent default build, require a board choice ---
+if [ $# -eq 0 ]; then
+    if [ -t 0 ]; then
+        printf '%s  no arguments -> interactive mode: a board profile must be chosen (profiles: --list-boards)%s\n' "$D" "$R"
+        INTERACTIVE=1
+    else
+        err "no arguments: choose a board with --board NAME (see --help)"
+        exit 1
+    fi
+fi
 
 while [ $# -gt 0 ]; do
     case "$1" in
